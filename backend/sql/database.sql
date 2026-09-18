@@ -82,7 +82,10 @@ INSERT INTO `produk` (`id`, `kode`, `nama`, `kategori`, `satuan`, `harga_beli`, 
 (2, 'PRD-002', 'Kalung Emas Rantai 18K (75%)', 'Perhiasan Emas', 'gram', 980000.00, 1075000.00, 24.250, NULL, 'Kalung emas 18 karat kadar 75% tahan lama'),
 (3, 'PRD-003', 'Pupuk NPK Mutiara 16-16-16 (50 Kg)', 'Pertanian', 'sak', 780000.00, 850000.00, 45.000, NULL, 'Pupuk penyubur sawit dan karet'),
 (4, 'PRD-004', 'Pisau Dodos Sawit Baja Super', 'Peralatan', 'pcs', 175000.00, 220000.00, 30.000, NULL, 'Dodos sawit tajam baja pegas asli'),
-(5, 'PRD-005', 'Cuka Getah Pembeku Karet (Derigen 5L)', 'Pertanian', 'derigen', 65000.00, 80000.00, 60.000, NULL, 'Pembeku getah karet bersih tidak merusak kualitas');
+(5, 'PRD-005', 'Cuka Getah Pembeku Karet (Derigen 5L)', 'Pertanian', 'derigen', 65000.00, 80000.00, 60.000, NULL, 'Pembeku getah karet bersih tidak merusak kualitas'),
+(6, 'KMD-EMAS', 'Emas Murni / Leburan', 'Perhiasan Emas', 'gram', 1350000.00, 1420000.00, 6.612, NULL, 'Produk otomatis komoditas emas murni/leburan. Stok otomatis bertambah saat timbang beli.'),
+(7, 'KMD-SAWIT', 'Kelapa Sawit (TBS)', 'Pertanian', 'kg', 2650.00, 2800.00, 1406.500, NULL, 'Produk otomatis komoditas sawit TBS. Stok otomatis bertambah saat timbang beli.'),
+(8, 'KMD-KARET', 'Karet Rakyat', 'Pertanian', 'kg', 11500.00, 12500.00, 361.000, NULL, 'Produk otomatis komoditas getah karet. Stok otomatis bertambah saat timbang beli.');
 
 -- --------------------------------------------------------
 -- 4. Tabel Transaksi Pembelian Komoditas (Emas, Sawit, Karet)
@@ -266,4 +269,33 @@ CREATE TABLE `users` (
 INSERT INTO `users` (`id`, `username`, `password`, `nama`, `role`, `status`) VALUES
 (1, 'admin', 'admin123', 'Admin Berkah', 'admin', 'aktif'),
 (2, 'kasir', 'kasir123', 'Kasir Utama', 'kasir', 'aktif');
+
+-- --------------------------------------------------------
+-- 11. Tabel Uang Kas Toko (Arus Kas Masuk & Keluar)
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `kas`;
+CREATE TABLE `kas` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `kode_transaksi` VARCHAR(30) NOT NULL UNIQUE,
+  `tipe` ENUM('masuk', 'keluar') NOT NULL,
+  `kategori` VARCHAR(60) NOT NULL,
+  `jumlah` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+  `sumber` ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang') DEFAULT 'manual',
+  `referensi_id` VARCHAR(50) DEFAULT NULL,
+  `keterangan` TEXT DEFAULT NULL,
+  `tanggal` DATE NOT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_kas_tipe` (`tipe`),
+  INDEX `idx_kas_tgl` (`tanggal`),
+  INDEX `idx_kas_kode` (`kode_transaksi`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `kas` (`id`, `kode_transaksi`, `tipe`, `kategori`, `jumlah`, `sumber`, `referensi_id`, `keterangan`, `tanggal`) VALUES
+(1, 'KAS-IN-20260915-001', 'masuk', 'Modal Awal', 15000000.00, 'manual', NULL, 'Modal awal kasir & kas operasional toko', '2026-09-15'),
+(2, 'KAS-OUT-20260915-002', 'keluar', 'Beli Perlengkapan', 350000.00, 'manual', NULL, 'Beli kertas nota thermal 10 roll & nota fisik', '2026-09-15'),
+(3, 'KAS-OUT-20260916-003', 'keluar', 'Bensin & Angkutan', 120000.00, 'manual', NULL, 'Bensin motor operasional jemput getah karet', '2026-09-16'),
+(4, 'KAS-OUT-20260917-004', 'keluar', 'Listrik & Air', 450000.00, 'manual', NULL, 'Bayar tagihan token listrik PLN toko', '2026-09-17'),
+(5, 'KAS-IN-20260918-005', 'masuk', 'Tambah Modal', 5000000.00, 'manual', NULL, 'Setor modal tambahan untuk dana timbang beli sawit', '2026-09-18'),
+(6, 'KAS-IN-20260918-006', 'masuk', 'Modal Belanja Komoditas', 100000000.00, 'manual', NULL, 'Dana kas disiapkan untuk belanja emas & komoditas hari ini', '2026-09-18');
+
 

@@ -727,6 +727,30 @@ app.post('/api/transaksi-beli', async (req, res) => {
     const dateCode = tanggal.replace(/-/g, '');
     const no_nota = `NOT-B-${dateCode}-${String(nextId).padStart(3, '0')}`;
 
+    // Hitung pengeluaran uang kas nyata untuk pembelian ini
+    const tunaiKeluar = (metode_bayar === 'tunai' || metode_bayar === 'transfer')
+      ? Math.max(0, totalBayar - (parseFloat(jumlah_potong_hutang) || 0) - (parseFloat(jumlah_masuk_titipan) || 0))
+      : 0;
+
+    // Validasi ketersediaan saldo uang kas toko
+    if (tunaiKeluar > 0) {
+      const [kasSummary] = await connection.query(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) AS saldo_kas
+        FROM kas
+      `);
+      const currentSaldoKas = parseFloat(kasSummary[0]?.saldo_kas) || 0;
+
+      if (currentSaldoKas < tunaiKeluar) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Saldo uang kas tidak mencukupi untuk pembayaran ini! Sisa uang kas toko saat ini hanya Rp ${Math.round(currentSaldoKas).toLocaleString('id-ID')}, sedangkan pembayaran membutuhkan Rp ${Math.round(tunaiKeluar).toLocaleString('id-ID')}. Silakan siapkan uang kas modal belanja terlebih dahulu di menu Uang Kas Toko.`,
+        });
+      }
+    }
+
     // Insert transaksi pembelian
     const [result] = await connection.query(
       `INSERT INTO transaksi_beli (
@@ -824,12 +848,82 @@ app.post('/api/transaksi-beli', async (req, res) => {
       }
     }
 
+    // Otomatis sinkronkan pembelian ke stok produk kasir (KMD-EMAS, KMD-SAWIT, KMD-KARET)
+    const kodeProduk = `KMD-${jenis_komoditas.toUpperCase()}`;
+    const [existProd] = await connection.query(
+      'SELECT id, stok FROM produk WHERE kode = ? FOR UPDATE',
+      [kodeProduk]
+    );
+
+    if (existProd.length > 0) {
+      await connection.query(
+        'UPDATE produk SET stok = stok + ?, harga_beli = ? WHERE kode = ?',
+        [netWeight, unitPrice, kodeProduk]
+      );
+    } else {
+      let namaProd = 'Emas Murni / Leburan';
+      let katProd = 'Perhiasan Emas';
+      let satProd = 'gram';
+      let defaultJual = unitPrice;
+
+      if (jenis_komoditas === 'sawit') {
+        namaProd = 'Kelapa Sawit (TBS)';
+        katProd = 'Pertanian';
+        satProd = 'kg';
+      } else if (jenis_komoditas === 'karet') {
+        namaProd = 'Karet Rakyat';
+        katProd = 'Pertanian';
+        satProd = 'kg';
+      } else {
+        namaProd = `Komoditas ${jenis_komoditas.toUpperCase()}`;
+        katProd = 'Umum';
+        satProd = satuan || 'kg';
+      }
+
+      await connection.query(
+        `INSERT INTO produk (kode, nama, kategori, satuan, harga_beli, harga_jual, stok, deskripsi)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          kodeProduk,
+          namaProd,
+          katProd,
+          satProd,
+          unitPrice,
+          defaultJual,
+          netWeight,
+          `Stok otomatis dari pembelian komoditas ${jenis_komoditas.toUpperCase()}`,
+        ]
+      );
+    }
+
+    // Otomatis kurangi uang kas toko (catat pengeluaran kas)
+    if (tunaiKeluar > 0) {
+      const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+      const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+      const kode_kas = `KAS-OUT-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+      const namaKomoditas = jenis_komoditas === 'emas' ? 'Emas' : jenis_komoditas === 'sawit' ? 'Sawit' : jenis_komoditas === 'karet' ? 'Karet' : jenis_komoditas.toUpperCase();
+
+      await connection.query(
+        `INSERT INTO kas (
+          kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+        ) VALUES (?, 'keluar', ?, ?, 'komoditas', ?, ?, ?)`,
+        [
+          kode_kas,
+          `Beli ${namaKomoditas}`,
+          tunaiKeluar,
+          no_nota,
+          `Pembelian ${namaKomoditas} (${netWeight} ${jenis_komoditas === 'emas' ? 'gram' : satuan}) - Nota ${no_nota} - ${nama_pelanggan || 'Pelanggan Umum'}`,
+          tanggal,
+        ]
+      );
+    }
+
     await connection.commit();
 
     const [newTrans] = await db.query('SELECT * FROM transaksi_beli WHERE id = ?', [result.insertId]);
     return res.status(201).json({
       success: true,
-      message: `Pembelian ${jenis_komoditas.toUpperCase()} berhasil dicatat`,
+      message: `Pembelian ${jenis_komoditas.toUpperCase()} berhasil dicatat, stok produk ditambah, dan uang kas berkurang`,
       data: newTrans[0],
     });
   } catch (error) {
@@ -842,13 +936,33 @@ app.post('/api/transaksi-beli', async (req, res) => {
 });
 
 app.delete('/api/transaksi-beli/:id', async (req, res) => {
+  const connection = await db.getConnection();
   try {
+    await connection.beginTransaction();
     const id = parseInt(req.params.id, 10);
-    await db.query('DELETE FROM transaksi_beli WHERE id = ?', [id]);
-    return res.json({ success: true, message: 'Transaksi beli berhasil dihapus' });
+    const [rows] = await connection.query('SELECT * FROM transaksi_beli WHERE id = ?', [id]);
+    if (rows.length > 0) {
+      const trans = rows[0];
+      const kodeProduk = `KMD-${trans.jenis_komoditas.toUpperCase()}`;
+      await connection.query(
+        'UPDATE produk SET stok = GREATEST(0, stok - ?) WHERE kode = ?',
+        [parseFloat(trans.berat_bersih) || 0, kodeProduk]
+      );
+      // Hapus otomatis catatan pengeluaran kas terkait agar saldo uang kas toko kembali (rollback kas)
+      await connection.query(
+        "DELETE FROM kas WHERE referensi_id = ? AND sumber = 'komoditas'",
+        [trans.no_nota]
+      );
+      await connection.query('DELETE FROM transaksi_beli WHERE id = ?', [id]);
+    }
+    await connection.commit();
+    return res.json({ success: true, message: 'Transaksi beli berhasil dihapus, stok disesuaikan, dan uang kas dikembalikan' });
   } catch (error) {
+    await connection.rollback();
     console.error('DELETE /api/transaksi-beli/:id error:', error);
     return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    connection.release();
   }
 });
 
@@ -1059,6 +1173,28 @@ app.post('/api/transaksi-jual', async (req, res) => {
             prevBal,
             newBal,
             `Bayar belanja kasir faktur ${no_faktur}`,
+            tanggal,
+          ]
+        );
+      }
+    }
+
+    // Jika penjualan tunai di kasir, catat otomatis uang kas masuk toko
+    if (metode_bayar === 'tunai' && parseFloat(total_akhir) > 0) {
+      const nominalKasMasuk = Math.min(parseFloat(bayar) || 0, parseFloat(total_akhir) || 0);
+      if (nominalKasMasuk > 0) {
+        const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+        const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+        const kode_kas = `KAS-IN-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+        await connection.query(
+          `INSERT INTO kas (
+            kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+          ) VALUES (?, 'masuk', 'Penjualan Kasir', ?, 'kasir', ?, ?, ?)`,
+          [
+            kode_kas,
+            nominalKasMasuk,
+            no_faktur,
+            `Penjualan kasir faktur ${no_faktur} - ${nama_pelanggan || 'Pelanggan Umum'}`,
             tanggal,
           ]
         );
@@ -1354,6 +1490,26 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
       [kode_bayar, hutang_id || null, targetPelangganId, payAmount, metode_bayar, prevDebt, newDebt, catatan || null, tanggal]
     );
 
+    // Jika pelunasan hutang secara tunai, catat otomatis uang kas masuk toko
+    if (metode_bayar === 'tunai' && payAmount > 0) {
+      const dateCode = tanggal.replace(/-/g, '');
+      const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+      const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+      const kode_kas = `KAS-IN-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+      await connection.query(
+        `INSERT INTO kas (
+          kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+        ) VALUES (?, 'masuk', 'Pelunasan Kasbon', ?, 'bayar_hutang', ?, ?, ?)`,
+        [
+          kode_kas,
+          payAmount,
+          kode_bayar,
+          `Pelunasan kasbon pelanggan ${cust.nama || 'Pelanggan'} (${kode_bayar})`,
+          tanggal,
+        ]
+      );
+    }
+
     await connection.commit();
 
     const [newPay] = await db.query(
@@ -1511,7 +1667,223 @@ app.post('/api/titipan', async (req, res) => {
 });
 
 // ====================================================================
-// 8. ENDPOINTS: LAPORAN & GRAFIK ANALITIK
+// 8. ENDPOINTS: UANG KAS TOKO (ARUS KAS MASUK & KELUAR)
+// ====================================================================
+app.get('/api/kas', async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+    const offset = (page - 1) * limit;
+    const search = req.query.search ? req.query.search.trim() : '';
+    const tipe = req.query.tipe ? req.query.tipe.trim() : '';
+    const kategori = req.query.kategori ? req.query.kategori.trim() : '';
+    const startDate = req.query.startDate ? req.query.startDate.trim() : '';
+    const endDate = req.query.endDate ? req.query.endDate.trim() : '';
+    const today = new Date().toISOString().slice(0, 10);
+
+    let whereClause = ' WHERE 1=1';
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (kode_transaksi LIKE ? OR kategori LIKE ? OR keterangan LIKE ?)';
+      const term = `%${search}%`;
+      params.push(term, term, term);
+    }
+    if (tipe && (tipe === 'masuk' || tipe === 'keluar')) {
+      whereClause += ' AND tipe = ?';
+      params.push(tipe);
+    }
+    if (kategori) {
+      whereClause += ' AND kategori = ?';
+      params.push(kategori);
+    }
+    if (startDate) {
+      whereClause += ' AND tanggal >= ?';
+      params.push(startDate);
+    }
+    if (endDate) {
+      whereClause += ' AND tanggal <= ?';
+      params.push(endDate);
+    }
+
+    // Hitung total filtered rows
+    const [countResult] = await db.query(
+      `SELECT COUNT(*) as total FROM kas ${whereClause}`,
+      params
+    );
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    // Ambil data dengan pagination
+    const [rows] = await db.query(
+      `SELECT * FROM kas ${whereClause} ORDER BY tanggal DESC, id DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    // Hitung saldo kas riil keseluruhan toko (Total Masuk - Total Keluar)
+    const [allSummary] = await db.query(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) as total_masuk,
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as total_keluar
+      FROM kas
+    `);
+    const totalMasukAll = parseFloat(allSummary[0].total_masuk) || 0;
+    const totalKeluarAll = parseFloat(allSummary[0].total_keluar) || 0;
+    const saldoKasSaatIni = totalMasukAll - totalKeluarAll;
+
+    // Hitung perputaran kas hari ini
+    const [todaySummary] = await db.query(
+      `SELECT 
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) as masuk,
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as keluar
+      FROM kas WHERE tanggal = ?`,
+      [today]
+    );
+    const hariIniMasuk = parseFloat(todaySummary[0].masuk) || 0;
+    const hariIniKeluar = parseFloat(todaySummary[0].keluar) || 0;
+
+    return res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+      summary: {
+        saldo_kas: saldoKasSaatIni,
+        total_masuk: totalMasukAll,
+        total_keluar: totalKeluarAll,
+        kas_hari_ini: {
+          masuk: hariIniMasuk,
+          keluar: hariIniKeluar,
+          selisih: hariIniMasuk - hariIniKeluar,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('GET /api/kas error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/kas', async (req, res) => {
+  try {
+    const {
+      tipe, // 'masuk' | 'keluar'
+      kategori,
+      jumlah,
+      keterangan = '',
+      tanggal = new Date().toISOString().slice(0, 10),
+    } = req.body;
+
+    if (!tipe || !['masuk', 'keluar'].includes(tipe)) {
+      return res.status(400).json({ success: false, message: 'Tipe kas (masuk atau keluar) wajib dipilih!' });
+    }
+    if (!kategori || !kategori.trim()) {
+      return res.status(400).json({ success: false, message: 'Kategori kas wajib diisi!' });
+    }
+    const nominal = parseFloat(jumlah);
+    if (isNaN(nominal) || nominal <= 0) {
+      return res.status(400).json({ success: false, message: 'Jumlah kas wajib lebih dari 0!' });
+    }
+
+    // Generate kode transaksi kas
+    const dateCode = tanggal.replace(/-/g, '');
+    const prefix = tipe === 'masuk' ? 'KAS-IN' : 'KAS-OUT';
+    const [maxRow] = await db.query('SELECT MAX(id) as maxId FROM kas');
+    const nextId = (maxRow[0].maxId || 0) + 1;
+    const kode_transaksi = `${prefix}-${dateCode}-${String(nextId).padStart(3, '0')}`;
+
+    const [result] = await db.query(
+      `INSERT INTO kas (
+        kode_transaksi, tipe, kategori, jumlah, sumber, keterangan, tanggal
+      ) VALUES (?, ?, ?, ?, 'manual', ?, ?)`,
+      [kode_transaksi, tipe, kategori.trim(), nominal, keterangan.trim() || null, tanggal]
+    );
+
+    const [newRow] = await db.query('SELECT * FROM kas WHERE id = ?', [result.insertId]);
+
+    return res.status(201).json({
+      success: true,
+      message: `Catatan kas ${tipe} berhasil disimpan`,
+      data: newRow[0],
+    });
+  } catch (error) {
+    console.error('POST /api/kas error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/kas/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const { kategori, jumlah, keterangan = '', tanggal } = req.body;
+
+    const [exist] = await db.query('SELECT * FROM kas WHERE id = ?', [id]);
+    if (exist.length === 0) {
+      return res.status(404).json({ success: false, message: 'Transaksi kas tidak ditemukan' });
+    }
+
+    const updates = [];
+    const params = [];
+
+    if (kategori) {
+      updates.push('kategori = ?');
+      params.push(kategori.trim());
+    }
+    if (jumlah !== undefined) {
+      const nominal = parseFloat(jumlah);
+      if (isNaN(nominal) || nominal <= 0) {
+        return res.status(400).json({ success: false, message: 'Jumlah wajib lebih dari 0!' });
+      }
+      updates.push('jumlah = ?');
+      params.push(nominal);
+    }
+    if (keterangan !== undefined) {
+      updates.push('keterangan = ?');
+      params.push(keterangan.trim() || null);
+    }
+    if (tanggal) {
+      updates.push('tanggal = ?');
+      params.push(tanggal);
+    }
+
+    if (updates.length > 0) {
+      params.push(id);
+      await db.query(`UPDATE kas SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    const [updated] = await db.query('SELECT * FROM kas WHERE id = ?', [id]);
+    return res.json({
+      success: true,
+      message: 'Transaksi kas berhasil diperbarui',
+      data: updated[0],
+    });
+  } catch (error) {
+    console.error('PUT /api/kas/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.delete('/api/kas/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [exist] = await db.query('SELECT * FROM kas WHERE id = ?', [id]);
+    if (exist.length === 0) {
+      return res.status(404).json({ success: false, message: 'Transaksi kas tidak ditemukan' });
+    }
+    await db.query('DELETE FROM kas WHERE id = ?', [id]);
+    return res.json({ success: true, message: 'Transaksi kas berhasil dihapus' });
+  } catch (error) {
+    console.error('DELETE /api/kas/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ====================================================================
+// 9. ENDPOINTS: LAPORAN & GRAFIK ANALITIK
 // ====================================================================
 app.get('/api/laporan/ringkasan', async (req, res) => {
   try {
@@ -1678,7 +2050,75 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Inisialisasi otomatis 3 produk komoditas tetap (KMD-EMAS, KMD-SAWIT, KMD-KARET)
+async function ensureCommodityProducts() {
+  try {
+    const commodities = [
+      { kode: 'KMD-EMAS', jenis: 'emas', nama: 'Emas Murni / Leburan', kategori: 'Perhiasan Emas', satuan: 'gram', defPrice: 1350000 },
+      { kode: 'KMD-SAWIT', jenis: 'sawit', nama: 'Kelapa Sawit (TBS)', kategori: 'Pertanian', satuan: 'kg', defPrice: 2650 },
+      { kode: 'KMD-KARET', jenis: 'karet', nama: 'Karet Rakyat', kategori: 'Pertanian', satuan: 'kg', defPrice: 11500 },
+    ];
+
+    for (const c of commodities) {
+      const [exists] = await db.query('SELECT id, stok FROM produk WHERE kode = ?', [c.kode]);
+      if (exists.length === 0) {
+        // Hitung total berat bersih yang pernah dibeli
+        const [sumBeli] = await db.query(
+          'SELECT COALESCE(SUM(berat_bersih), 0) as total FROM transaksi_beli WHERE jenis_komoditas = ?',
+          [c.jenis]
+        );
+        const totalStok = parseFloat(sumBeli[0].total) || 0;
+
+        await db.query(
+          `INSERT INTO produk (kode, nama, kategori, satuan, harga_beli, harga_jual, stok, deskripsi)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            c.kode,
+            c.nama,
+            c.kategori,
+            c.satuan,
+            c.defPrice,
+            c.defPrice,
+            totalStok,
+            `Produk otomatis untuk komoditas ${c.nama}. Stok otomatis bertambah saat timbang beli komoditas.`,
+          ]
+        );
+        console.log(`[Auto-Init] Produk ${c.kode} dibuat dengan stok sinkronisasi awal: ${totalStok} ${c.satuan}`);
+      }
+    }
+  } catch (err) {
+    // Database connection or table might not be ready yet
+  }
+}
+
+// Inisialisasi tabel kas jika belum ada
+async function ensureKasTable() {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS kas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        kode_transaksi VARCHAR(30) NOT NULL UNIQUE,
+        tipe ENUM('masuk', 'keluar') NOT NULL,
+        kategori VARCHAR(60) NOT NULL,
+        jumlah DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang') DEFAULT 'manual',
+        referensi_id VARCHAR(50) DEFAULT NULL,
+        keterangan TEXT DEFAULT NULL,
+        tanggal DATE NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_kas_tipe (tipe),
+        INDEX idx_kas_tgl (tanggal),
+        INDEX idx_kas_kode (kode_transaksi)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+  } catch (err) {
+    // Silent catch if DB not ready
+  }
+}
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Berkah POS Backend berjalan di port http://localhost:${PORT}`);
+  ensureKasTable();
+  ensureCommodityProducts();
 });

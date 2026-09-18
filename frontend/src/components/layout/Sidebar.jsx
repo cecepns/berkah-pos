@@ -50,9 +50,8 @@ export default function Sidebar({ isOpen, onClose }) {
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-white border-r border-slate-200/90 flex flex-col transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-white border-r border-slate-200/90 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         {/* Header Branding */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-slate-100">
@@ -90,10 +89,9 @@ export default function Sidebar({ isOpen, onClose }) {
                   if (window.innerWidth < 1024) onClose();
                 }}
                 className={({ isActive }) =>
-                  `flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                    isActive
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-semibold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+                  `flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20 font-semibold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
                   }`
                 }
               >

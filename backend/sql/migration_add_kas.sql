@@ -69,3 +69,15 @@ VALUES
 ('KAS-OUT-20260917-004', 'keluar', 'Listrik & Air', 450000.00, 'manual', NULL, 'Bayar tagihan token listrik PLN toko', '2026-09-17'),
 ('KAS-IN-20260918-005', 'masuk', 'Tambah Modal', 5000000.00, 'manual', NULL, 'Setor modal tambahan untuk dana timbang beli sawit', '2026-09-18'),
 ('KAS-IN-20260918-006', 'masuk', 'Modal Belanja Komoditas', 100000000.00, 'manual', NULL, 'Dana kas disiapkan untuk belanja emas & komoditas hari ini', '2026-09-18');
+
+-- ------------------------------------------------------------------------------
+-- 5. KOREKSI DATA LAMA JIKA TRANSAKSI NOT-B-20260918-012 TERCATAT 150.750
+-- ------------------------------------------------------------------------------
+UPDATE `transaksi_beli` 
+SET `subtotal` = 2010000.00, `total_bayar` = 2010000.00 
+WHERE `no_nota` = 'NOT-B-20260918-012' AND (`total_bayar` = 150750.00 OR `subtotal` = 1809000.00);
+
+UPDATE `kas` 
+SET `jumlah` = 2010000.00 
+WHERE `referensi_id` = 'NOT-B-20260918-012' AND `jumlah` = 150750.00;
+

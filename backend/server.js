@@ -105,6 +105,14 @@ async function testDbConnection() {
       console.log('👤 Akun Demo Kasir dibuat (kasir / kasir123)');
     }
 
+    // Auto-fix data lama jika transaksi NOT-B-20260918-012 masih tercatat 150750 (seharusnya 2010000)
+    try {
+      await conn.query("UPDATE transaksi_beli SET subtotal = 2010000.00, total_bayar = 2010000.00 WHERE no_nota = 'NOT-B-20260918-012' AND (total_bayar = 150750.00 OR subtotal = 1809000.00)");
+      await conn.query("UPDATE kas SET jumlah = 2010000.00 WHERE referensi_id = 'NOT-B-20260918-012' AND jumlah = 150750.00");
+    } catch (e) {
+      // ignore
+    }
+
     conn.release();
     console.log('✅ Berhasil terhubung ke database MySQL berkah_pos & tabel users siap');
   } catch (err) {
@@ -715,11 +723,14 @@ app.post('/api/transaksi-beli', async (req, res) => {
     // Presisi 3 desimal untuk emas (0.000 gram) dan komoditas
     netWeight = Math.round(netWeight * 1000) / 1000;
     const unitPrice = parseFloat(harga_satuan);
-    const subtotal = Math.round(netWeight * unitPrice);
+    const grossTotal = Math.round(grossWeight * unitPrice);
+    const subtotal = req.body.subtotal !== undefined
+      ? parseFloat(req.body.subtotal)
+      : (jenis_komoditas === 'emas' ? grossTotal : Math.round(netWeight * unitPrice));
     const extraCost = parseFloat(biaya_lain) || 0;
     const totalBayar = req.body.total_bayar !== undefined 
       ? Math.max(0, parseFloat(req.body.total_bayar)) 
-      : Math.max(0, subtotal - extraCost);
+      : (jenis_komoditas === 'emas' ? Math.max(0, grossTotal - extraCost) : Math.max(0, subtotal - extraCost));
 
     // Generate No Nota Unik
     const [maxRow] = await connection.query('SELECT MAX(id) as maxId FROM transaksi_beli');

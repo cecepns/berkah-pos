@@ -97,7 +97,16 @@ export default function ReceiptModal({
       }
 
       // Row 3: Dibagi 1 (e.g. Dibagi 2)
-      const bagi1 = Number(data.pembagi_1) || 0;
+      let bagi1 = Number(data.pembagi_1) || 0;
+      let bagi2 = Number(data.pembagi_2) || 0;
+
+      // Fallback deteksi jika pembagi ada pada catatan
+      if (!bagi1 && !bagi2 && data.catatan) {
+        const matches = [...data.catatan.matchAll(/Dibagi\s+(\d+)/gi)];
+        if (matches.length > 0) bagi1 = Number(matches[0][1]) || 0;
+        if (matches.length > 1) bagi2 = Number(matches[1][1]) || 0;
+      }
+
       if (bagi1 > 0) {
         currentTotal = Number(data.after_bagi_1) || Math.round(currentTotal / bagi1);
         rows.push({
@@ -110,7 +119,6 @@ export default function ReceiptModal({
       }
 
       // Row 4: Dibagi 2 (e.g. Dibagi 6)
-      const bagi2 = Number(data.pembagi_2) || 0;
       if (bagi2 > 0) {
         currentTotal = Number(data.after_bagi_2) || Math.round(currentTotal / bagi2);
         rows.push({
@@ -161,19 +169,19 @@ export default function ReceiptModal({
       return [
         {
           no: '1.',
-          nama: 'Sisa Bon Sebelum',
+          nama: 'Sisa Kasbon Sebelumnya',
           harga: '-',
           jumlah: formatNumber(data.sisa_sebelum || 0, 0),
         },
         {
           no: '2.',
-          nama: 'Pembayaran Bon',
+          nama: 'Pembayaran Diterima',
           harga: '-',
           jumlah: formatNumber(data.jumlah_bayar || 0, 0),
         },
         {
           no: '3.',
-          nama: 'Sisa Bon Sesudah',
+          nama: 'Sisa Saldo Kasbon',
           harga: '-',
           jumlah: formatNumber(data.sisa_sesudah || 0, 0),
         },
@@ -208,9 +216,27 @@ export default function ReceiptModal({
 
   const rows = renderItemRows();
 
-  // Total akhir
+  // Cek apakah ada pembagian hasil mitra
+  let checkBagi1 = Number(data.pembagi_1) || 0;
+  let checkBagi2 = Number(data.pembagi_2) || 0;
+  if (!checkBagi1 && !checkBagi2 && data.catatan) {
+    const matches = [...data.catatan.matchAll(/Dibagi\s+(\d+)/gi)];
+    if (matches.length > 0) checkBagi1 = Number(matches[0][1]) || 0;
+    if (matches.length > 1) checkBagi2 = Number(matches[1][1]) || 0;
+  }
+  const hasPembagiMitra = checkBagi1 > 0 || checkBagi2 > 0;
+
+  // Total akhir yang tercetak di bagian bawah nota
+  // Jika ada pembagian mitra (pembagi 2/6), baris 'Jumlah Rp.' di nota menampilkan nominal bagi hasil (misal: 150.750)
+  // sesuai gambar format klien
+  const lastRowAmount = rows.length > 0
+    ? Number(String(rows[rows.length - 1].jumlah).replace(/[^0-9.-]/g, ''))
+    : 0;
+
   const finalTotal =
-    data.total_bayar !== undefined
+    hasPembagiMitra && (data.nilai_bagi_hasil !== undefined || data.after_bagi_2 !== undefined || lastRowAmount > 0)
+      ? Number(data.nilai_bagi_hasil || data.after_bagi_2 || lastRowAmount)
+      : data.total_bayar !== undefined
       ? Number(data.total_bayar)
       : data.total_akhir !== undefined
       ? Number(data.total_akhir)

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import AsyncSelect from 'react-select/async';
 import {
   Scale,
   Plus,
@@ -21,6 +22,87 @@ import Pagination from '@/components/common/Pagination';
 import EmptyState from '@/components/common/EmptyState';
 import { TableSkeleton } from '@/components/common/LoadingSkeleton';
 import ReceiptModal from '@/components/common/ReceiptModal';
+
+const customPelangganSelectStyles = {
+  control: (base, state) => ({
+    ...base,
+    backgroundColor: '#ffffff',
+    borderColor: state.isFocused ? '#f59e0b' : '#cbd5e1',
+    borderRadius: '0.75rem',
+    fontSize: '0.75rem',
+    minHeight: '40px',
+    boxShadow: state.isFocused ? '0 0 0 1px #f59e0b' : 'none',
+    '&:hover': {
+      borderColor: state.isFocused ? '#f59e0b' : '#94a3b8',
+    },
+    cursor: 'pointer',
+  }),
+  menu: (base) => ({
+    ...base,
+    borderRadius: '0.75rem',
+    overflow: 'hidden',
+    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+    zIndex: 9999,
+    fontSize: '0.75rem',
+    border: '1px solid #e2e8f0',
+    backgroundColor: '#ffffff',
+  }),
+  menuList: (base) => ({
+    ...base,
+    padding: '4px',
+    maxHeight: '220px',
+  }),
+  menuPortal: (base) => ({
+    ...base,
+    zIndex: 9999,
+  }),
+  option: (base, state) => ({
+    ...base,
+    borderRadius: '0.5rem',
+    margin: '2px 0',
+    backgroundColor: state.isSelected
+      ? '#f59e0b'
+      : state.isFocused
+      ? '#fef3c7'
+      : 'transparent',
+    color: state.isSelected ? '#ffffff' : '#0f172a',
+    cursor: 'pointer',
+    fontSize: '0.75rem',
+    padding: '6px 10px',
+  }),
+  singleValue: (base) => ({
+    ...base,
+    color: '#0f172a',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+  }),
+  input: (base) => ({
+    ...base,
+    color: '#0f172a',
+    fontSize: '0.75rem',
+  }),
+  placeholder: (base) => ({
+    ...base,
+    color: '#94a3b8',
+    fontSize: '0.75rem',
+  }),
+  dropdownIndicator: (base) => ({
+    ...base,
+    padding: '4px 8px',
+    color: '#94a3b8',
+    '&:hover': {
+      color: '#64748b',
+    },
+  }),
+  clearIndicator: (base) => ({
+    ...base,
+    padding: '4px 8px',
+    color: '#94a3b8',
+    '&:hover': {
+      color: '#ef4444',
+    },
+  }),
+};
 
 export default function Komoditas() {
   const { storeInfo } = useOutletContext();
@@ -234,16 +316,58 @@ export default function Komoditas() {
     setIsCreateOpen(true);
   };
 
-  // When customer is selected
-  const handleSelectCustomer = (e) => {
-    const custId = e.target.value;
-    if (!custId) {
+  const searchPelangganTimerRef = useRef(null);
+
+  const loadPelangganOptions = (inputValue) => {
+    return new Promise((resolve) => {
+      if (searchPelangganTimerRef.current) clearTimeout(searchPelangganTimerRef.current);
+      const delay = inputValue ? 300 : 0;
+      searchPelangganTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await request.get(API_ENDPOINTS.PELANGGAN.LIST, {
+            search: inputValue ? inputValue.trim() : '',
+            limit: 30,
+          });
+          if (res?.success && Array.isArray(res.data)) {
+            const apiOptions = res.data.map((c) => ({
+              value: c.id,
+              label: `${c.kode} - ${c.nama}`,
+              subLabel: `${c.kategori}${c.no_hp ? ' • ' + c.no_hp : ''}`,
+              data: c,
+            }));
+            if (!inputValue) {
+              resolve([
+                {
+                  value: '',
+                  label: '👤 -- Pelanggan Bebas / Non-Mitra (Manual) --',
+                  subLabel: 'Ketik nama manual di kolom sebelah kanan',
+                  data: null,
+                },
+                ...apiOptions,
+              ]);
+            } else {
+              resolve(apiOptions);
+            }
+          } else {
+            resolve([]);
+          }
+        } catch (err) {
+          console.error('Gagal memuat opsi pelanggan:', err);
+          resolve([]);
+        }
+      }, delay);
+    });
+  };
+
+  const handleSelectCustomerOption = (selectedOption) => {
+    if (!selectedOption || !selectedOption.value || !selectedOption.data) {
       setSelectedCustomer(null);
-      setForm((prev) => ({ ...prev, pelanggan_id: '', nama_pelanggan: '' }));
-      return;
-    }
-    const found = pelangganList.find((c) => String(c.id) === String(custId));
-    if (found) {
+      setForm((prev) => ({
+        ...prev,
+        pelanggan_id: '',
+      }));
+    } else {
+      const found = selectedOption.data;
       setSelectedCustomer(found);
       setForm((prev) => ({
         ...prev,
@@ -252,6 +376,21 @@ export default function Komoditas() {
       }));
     }
   };
+
+  const currentCustomerOption = selectedCustomer
+    ? {
+        value: selectedCustomer.id,
+        label: `${selectedCustomer.kode} - ${selectedCustomer.nama}`,
+        subLabel: `${selectedCustomer.kategori}${selectedCustomer.no_hp ? ' • ' + selectedCustomer.no_hp : ''}`,
+        data: selectedCustomer,
+      }
+    : form.pelanggan_id
+    ? {
+        value: form.pelanggan_id,
+        label: form.nama_pelanggan || 'Mitra Terpilih',
+        data: null,
+      }
+    : null;
 
   // Computations
   const bruto = Number(form.berat_kotor) || 0;
@@ -281,7 +420,19 @@ export default function Komoditas() {
   const afterBagi2 = bagi2 > 0 ? Math.round(afterBagi1 / bagi2) : afterBagi1;
 
   const biayaLain = Number(form.biaya_lain) || 0;
-  const totalBayar = Math.max(0, afterBagi2 - biayaLain);
+
+  // Nilai Pembelian Barang Toko (Total Pengeluaran Uang Kas Toko):
+  // Pembelian 1 gr emas seharga 2.010.000 adalah pengeluaran riil kas toko (grossTotal - biayaLain)
+  // Pembagian hasil mitra (dibagi 2, dibagi 6) adalah rincian kalkulasi mitra yang tertera pada nota (bukan pengurangan kas toko).
+  const totalBeliToko = form.jenis_komoditas === 'emas'
+    ? Math.max(0, grossTotal - biayaLain)
+    : Math.max(0, afterPotong - biayaLain);
+
+  // Nilai bagi hasil mitra per bagian/pekerja (yang dicetak di nota jika ada pembagian):
+  const nilaiBagiHasil = bagi1 > 0 || bagi2 > 0 ? Math.max(0, afterBagi2 - biayaLain) : totalBeliToko;
+
+  // Total Bayar yang menjadi pengurangan kas toko & tercatat di laporan pengeluaran:
+  const totalBayar = totalBeliToko;
 
   // Handle Submit Form
   const handleSubmit = async (e) => {
@@ -332,7 +483,7 @@ export default function Komoditas() {
         satuan: form.satuan,
         kadar: form.kadar,
         harga_satuan: harga,
-        subtotal: afterPotong,
+        subtotal: form.jenis_komoditas === 'emas' ? grossTotal : afterPotong,
         biaya_lain: biayaLain,
         total_bayar: totalBayar,
         metode_bayar: form.metode_bayar,
@@ -658,21 +809,92 @@ export default function Komoditas() {
           {/* Customer / Petani Selector */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Pilih Mitra / Petani Terdaftar
-              </label>
-              <select
-                value={form.pelanggan_id}
-                onChange={handleSelectCustomer}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-amber-500 focus:outline-none"
-              >
-                <option value="">-- Pelanggan / Petani Bebas (Manual) --</option>
-                {pelangganList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.kode} - {c.nama} ({c.kategori})
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Pilih Mitra / Petani Terdaftar
+                </label>
+                {selectedCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCustomerOption(null)}
+                    className="text-[10px] text-slate-400 hover:text-rose-600 transition-colors"
+                  >
+                    Reset ke Manual
+                  </button>
+                )}
+              </div>
+              <AsyncSelect
+                cacheOptions
+                defaultOptions
+                loadOptions={loadPelangganOptions}
+                value={currentCustomerOption}
+                onChange={handleSelectCustomerOption}
+                isClearable={Boolean(selectedCustomer)}
+                placeholder="Ketik nama, kode, atau no HP mitra..."
+                loadingMessage={() => 'Mencari data mitra dari server...'}
+                noOptionsMessage={({ inputValue }) =>
+                  inputValue
+                    ? `Mitra "${inputValue}" tidak ditemukan`
+                    : 'Ketik nama / kode / no HP untuk mencari mitra'
+                }
+                menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                styles={customPelangganSelectStyles}
+                formatOptionLabel={(option, { context }) => {
+                  if (context === 'value') {
+                    return (
+                      <div className="font-semibold text-slate-800 text-xs truncate">
+                        {option.label}
+                      </div>
+                    );
+                  }
+
+                  if (!option.data) {
+                    return (
+                      <div className="py-0.5">
+                        <div className="font-semibold text-slate-800 text-xs">
+                          {option.label}
+                        </div>
+                        {option.subLabel && (
+                          <div className="text-[10px] text-slate-400">
+                            {option.subLabel}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  const c = option.data;
+                  const hasHutang = Number(c.saldo_hutang) > 0;
+                  const hasTitipan = Number(c.saldo_titipan) > 0;
+
+                  return (
+                    <div className="flex items-center justify-between py-0.5 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-slate-800 text-xs truncate">
+                          {c.kode} - {c.nama}
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {c.kategori} {c.no_hp ? `• ${c.no_hp}` : ''}
+                        </div>
+                      </div>
+                      {(hasHutang || hasTitipan) && (
+                        <div className="flex items-center gap-1 shrink-0 text-[10px]">
+                          {hasHutang && (
+                            <span className="bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                              Bon: {formatRupiah(c.saldo_hutang)}
+                            </span>
+                          )}
+                          {hasTitipan && (
+                            <span className="bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                              Tabungan: {formatRupiah(c.saldo_titipan)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }}
+              />
             </div>
 
             <div>
@@ -684,7 +906,7 @@ export default function Komoditas() {
                 required
                 value={form.nama_pelanggan}
                 onChange={(e) => setForm({ ...form, nama_pelanggan: e.target.value })}
-                placeholder="Misal: Pak Haji Mansur"
+                placeholder="Misal: Siti Rahmawati / Petani Bebas"
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-amber-500 focus:outline-none"
               />
             </div>
@@ -866,12 +1088,24 @@ export default function Komoditas() {
           {/* Payment & Settlement */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Total Pembayaran:
-              </span>
-              <span className="text-lg font-black text-amber-700 font-mono-num">
-                {formatRupiah(totalBayar)}
-              </span>
+              <div>
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  Total Pengeluaran Kas Toko:
+                </span>
+                {(bagi1 > 0 || bagi2 > 0) && (
+                  <span className="text-[11px] text-purple-700 font-semibold block">
+                    Bagi Hasil Cetak Nota: {formatRupiah(nilaiBagiHasil)} (per orang)
+                  </span>
+                )}
+              </div>
+              <div className="text-right">
+                <span className="text-lg font-black text-amber-700 font-mono-num">
+                  {formatRupiah(totalBayar)}
+                </span>
+                <span className="text-[10px] text-slate-500 block">
+                  {form.jenis_komoditas === 'emas' ? 'Nilai beli penuh 100% komoditas emas' : 'Total pembelian netto'}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

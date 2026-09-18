@@ -139,7 +139,9 @@ export default function Kasir() {
       prev
         .map((item) => {
           if (item.id === id) {
-            const nextQty = item.qty + delta;
+            const currentQty = parseFloat(item.qty) || 0;
+            const step = item.satuan === 'gram' || item.satuan === 'gr' ? 1 : 1;
+            const nextQty = Math.round((currentQty + delta * step) * 1000) / 1000;
             if (nextQty > item.stok) {
               toast.error(`Maksimal stok tersedia hanya ${item.stok}`);
               return item;
@@ -148,7 +150,25 @@ export default function Kasir() {
           }
           return item;
         })
-        .filter((item) => item.qty > 0)
+        .filter((item) => (parseFloat(item.qty) || 0) > 0)
+    );
+  };
+
+  const setCartQty = (id, val) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          if (val === '') return { ...item, qty: '' };
+          const num = parseFloat(val);
+          if (isNaN(num) || num < 0) return item;
+          if (num > item.stok) {
+            toast.error(`Maksimal stok tersedia hanya ${item.stok}`);
+            return { ...item, qty: item.stok };
+          }
+          return { ...item, qty: val };
+        }
+        return item;
+      })
     );
   };
 
@@ -163,7 +183,10 @@ export default function Kasir() {
     setCatatan('');
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.harga_jual * item.qty, 0);
+  const subtotal = cart.reduce(
+    (sum, item) => sum + item.harga_jual * (parseFloat(item.qty) || 0),
+    0
+  );
   const totalAkhir = Math.max(0, subtotal - Number(diskon || 0));
 
   useEffect(() => {
@@ -234,14 +257,14 @@ export default function Kasir() {
         kasir: 'Kasir Utama',
         catatan,
         tanggal: new Date().toISOString().split('T')[0],
-        items: cart.map((i) => ({
-          produk_id: i.id,
-          kode_produk: i.kode,
-          nama_produk: i.nama,
-          qty: i.qty,
-          satuan: i.satuan,
-          harga_satuan: i.harga_jual,
-          subtotal: i.harga_jual * i.qty,
+        items: cart.map((c) => ({
+          produk_id: c.id,
+          kode_produk: c.kode,
+          nama_produk: c.nama,
+          qty: parseFloat(c.qty) || 1,
+          satuan: c.satuan,
+          harga_satuan: c.harga_jual,
+          subtotal: c.harga_jual * (parseFloat(c.qty) || 1),
         })),
       };
 
@@ -525,7 +548,7 @@ export default function Kasir() {
                         </div>
                       </div>
 
-                      {/* Qty Controls */}
+                      {/* Qty Controls with direct decimal input */}
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
@@ -534,9 +557,14 @@ export default function Kasir() {
                         >
                           <Minus className="w-3 h-3" />
                         </button>
-                        <span className="w-6 text-center font-bold text-slate-900 font-mono-num text-xs">
-                          {item.qty}
-                        </span>
+                        <input
+                          type="number"
+                          step={item.satuan === 'gram' || item.satuan === 'gr' ? '0.001' : '1'}
+                          min="0.001"
+                          value={item.qty}
+                          onChange={(e) => setCartQty(item.id, e.target.value)}
+                          className="w-16 px-1 py-0.5 text-center font-bold text-slate-900 font-mono-num text-xs bg-white border border-slate-200 rounded-md focus:border-emerald-500 focus:outline-none"
+                        />
                         <button
                           type="button"
                           onClick={() => updateCartQty(item.id, 1)}
@@ -547,8 +575,8 @@ export default function Kasir() {
                       </div>
 
                       {/* Item Subtotal */}
-                      <div className="w-18 text-right font-black text-emerald-700 font-mono-num text-xs">
-                        {formatRupiah(item.harga_jual * item.qty)}
+                      <div className="w-20 text-right font-black text-emerald-700 font-mono-num text-xs">
+                        {formatRupiah(item.harga_jual * (parseFloat(item.qty) || 0))}
                       </div>
 
                       {/* Remove */}

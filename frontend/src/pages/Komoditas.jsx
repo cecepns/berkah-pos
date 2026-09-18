@@ -7,6 +7,9 @@ import {
   Trash2,
   Printer,
   ArrowRightLeft,
+  CheckCircle2,
+  Wallet,
+  Banknote,
 } from 'lucide-react';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
@@ -65,6 +68,20 @@ export default function Komoditas() {
   // Receipt Modal State
   const [receiptData, setReceiptData] = useState(null);
 
+  // Saldo Uang Kas Toko State
+  const [saldoKas, setSaldoKas] = useState(0);
+  const [loadingKas, setLoadingKas] = useState(false);
+
+  // Quick Modal "Siapkan Uang Kas Toko"
+  const [isKasModalOpen, setIsKasModalOpen] = useState(false);
+  const [kasModalForm, setKasModalForm] = useState({
+    jumlah: '',
+    kategori: 'Modal Belanja Komoditas',
+    keterangan: 'Dana disiapkan untuk belanja emas & komoditas hari ini',
+    tanggal: new Date().toISOString().split('T')[0],
+  });
+  const [submittingKas, setSubmittingKas] = useState(false);
+
   // Fetch list
   const fetchTransactions = async (page = pagination.page, limit = pagination.limit, q = search, kom = selectedKomoditas) => {
     setLoading(true);
@@ -101,13 +118,63 @@ export default function Komoditas() {
     }
   };
 
+  // Fetch saldo kas toko
+  const fetchSaldoKas = async () => {
+    setLoadingKas(true);
+    try {
+      const res = await request.get(API_ENDPOINTS.KAS.LIST, { limit: 1 });
+      if (res?.success && res.summary) {
+        setSaldoKas(parseFloat(res.summary.saldo_kas) || 0);
+      }
+    } catch (err) {
+      console.error('Gagal mengambil saldo kas:', err);
+    } finally {
+      setLoadingKas(false);
+    }
+  };
+
   useEffect(() => {
     fetchTransactions(1, pagination.limit, search, selectedKomoditas);
   }, [search, selectedKomoditas]);
 
   useEffect(() => {
     fetchPelanggan();
+    fetchSaldoKas();
   }, []);
+
+  const handleKasModalSubmit = async (e) => {
+    e.preventDefault();
+    const nominal = parseFloat(kasModalForm.jumlah);
+    if (!nominal || nominal <= 0) {
+      toast.error('Masukkan jumlah uang kas modal yang valid!');
+      return;
+    }
+    setSubmittingKas(true);
+    try {
+      const res = await request.post(API_ENDPOINTS.KAS.CREATE, {
+        tipe: 'masuk',
+        kategori: kasModalForm.kategori.trim() || 'Modal Belanja Komoditas',
+        jumlah: nominal,
+        keterangan: kasModalForm.keterangan.trim(),
+        tanggal: kasModalForm.tanggal,
+      });
+      if (res?.success) {
+        toast.success(`Uang kas ${formatRupiah(nominal)} berhasil disiapkan!`);
+        setIsKasModalOpen(false);
+        setKasModalForm({
+          jumlah: '',
+          kategori: 'Modal Belanja Komoditas',
+          keterangan: 'Dana disiapkan untuk belanja emas & komoditas hari ini',
+          tanggal: new Date().toISOString().split('T')[0],
+        });
+        fetchSaldoKas();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal menyiapkan uang kas');
+    } finally {
+      setSubmittingKas(false);
+    }
+  };
 
   // Set default price when commodity changes
   const handleCommodityTypeChange = (type) => {
@@ -232,6 +299,11 @@ export default function Komoditas() {
       return;
     }
 
+    if ((form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas) {
+      toast.error(`Uang kas tidak mencukupi! Kurang ${formatRupiah(totalBayar - saldoKas)}. Harap siapkan uang kas modal belanja terlebih dahulu.`);
+      return;
+    }
+
     setFormSubmitting(true);
     try {
       let catatanTeks = form.catatan || '';
@@ -278,10 +350,11 @@ export default function Komoditas() {
 
       const res = await request.post(API_ENDPOINTS.TRANSAKSI_BELI.CREATE, payload);
       if (res?.success) {
-        toast.success('Transaksi pembelian berhasil dicatat!');
+        toast.success('Transaksi pembelian berhasil dicatat & uang kas terpotong!');
         setIsCreateOpen(false);
         fetchTransactions(1, pagination.limit, search, selectedKomoditas);
         fetchPelanggan();
+        fetchSaldoKas();
 
         // Open receipt modal
         setReceiptData({
@@ -305,9 +378,10 @@ export default function Komoditas() {
     try {
       const res = await request.delete(API_ENDPOINTS.TRANSAKSI_BELI.DELETE(deleteId));
       if (res?.success) {
-        toast.success('Transaksi berhasil dihapus');
+        toast.success('Transaksi berhasil dihapus & saldo kas dikembalikan');
         setDeleteId(null);
         fetchTransactions(pagination.page, pagination.limit, search, selectedKomoditas);
+        fetchSaldoKas();
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Gagal menghapus transaksi');
@@ -330,14 +404,40 @@ export default function Komoditas() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Timbang & Beli Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Sisa Uang Kas Belanja Card */}
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200/80 shadow-xs">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600">
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-700">
+                Uang Kas Belanja
+              </div>
+              <div className="text-xs sm:text-sm font-black text-emerald-950 font-mono-num">
+                {loadingKas ? 'Memuat...' : formatRupiah(saldoKas)}
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsKasModalOpen(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all"
+          >
+            <Banknote className="w-4 h-4 text-emerald-600" />
+            <span>Siapkan Kas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Timbang & Beli Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters & Search Row */}
@@ -538,6 +638,20 @@ export default function Komoditas() {
                   {item.label}
                 </button>
               ))}
+            </div>
+            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50/80 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+              <span>
+                Hasil timbang beli ini otomatis menambah stok produk{' '}
+                <strong className="font-bold">
+                  {form.jenis_komoditas === 'emas'
+                    ? 'Emas Murni / Leburan'
+                    : form.jenis_komoditas === 'sawit'
+                    ? 'Kelapa Sawit (TBS)'
+                    : 'Karet Rakyat'}
+                </strong>{' '}
+                di katalog Kasir Toko.
+              </span>
             </div>
           </div>
 
@@ -824,6 +938,79 @@ export default function Komoditas() {
                 className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-amber-500 focus:outline-none"
               />
             </div>
+
+            {/* Status & Simulasi Uang Kas Toko */}
+            {(form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && (
+              <div
+                className={`p-3.5 rounded-2xl border text-xs space-y-2.5 transition-all ${
+                  totalBayar > saldoKas
+                    ? 'bg-rose-50/90 border-rose-200 text-rose-900'
+                    : 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4" />
+                    Simulasi Saldo Kas Toko
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                      totalBayar > saldoKas
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {totalBayar > saldoKas ? 'Kas Tidak Cukup' : 'Kas Siap & Cukup'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 py-0.5 text-center font-mono-num">
+                  <div className="p-2 rounded-xl bg-white/90 border border-slate-200/80 shadow-2xs">
+                    <div className="text-[10px] text-slate-500 font-sans">Kas Tersedia</div>
+                    <div className="font-bold text-slate-800 text-xs truncate">
+                      {formatRupiah(saldoKas)}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/90 border border-slate-200/80 shadow-2xs">
+                    <div className="text-[10px] text-slate-500 font-sans">Biaya Beli</div>
+                    <div className="font-bold text-amber-700 text-xs truncate">
+                      -{formatRupiah(totalBayar)}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/90 border border-slate-200/80 shadow-2xs">
+                    <div className="text-[10px] text-slate-500 font-sans">Sisa Kas Nanti</div>
+                    <div
+                      className={`font-black text-xs truncate ${
+                        totalBayar > saldoKas ? 'text-rose-600' : 'text-emerald-700'
+                      }`}
+                    >
+                      {formatRupiah(Math.max(0, saldoKas - totalBayar))}
+                    </div>
+                  </div>
+                </div>
+
+                {totalBayar > saldoKas ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-rose-200/80">
+                    <span className="text-[11px] text-rose-700 font-medium">
+                      ⚠️ Sisa kas kurang <strong>{formatRupiah(totalBayar - saldoKas)}</strong>. Harap siapkan uang kas dulu.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsKasModalOpen(true)}
+                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] shadow-xs flex items-center justify-center gap-1 shrink-0 transition-all"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Siapkan Kas Sekarang
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    ✅ Uang kas cukup. Setelah transaksi ini disimpan, sisa uang kas toko menjadi{' '}
+                    <strong>{formatRupiah(saldoKas - totalBayar)}</strong>.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Form Actions */}
@@ -838,13 +1025,116 @@ export default function Komoditas() {
             </button>
             <button
               type="submit"
-              disabled={formSubmitting}
-              className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm flex items-center gap-2"
+              disabled={formSubmitting || ((form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas)}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 ${
+                (form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+              }`}
             >
               {formSubmitting && (
                 <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               )}
               <span>Simpan & Cetak Nota</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Quick Modal: Siapkan Uang Kas Toko */}
+      <Modal
+        isOpen={isKasModalOpen}
+        onClose={() => setIsKasModalOpen(false)}
+        title="Siapkan Uang Kas Toko / Modal Belanja"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleKasModalSubmit} className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <Wallet className="w-4 h-4 text-emerald-600" />
+              Sedia Uang Kas Sebelum Belanja
+            </div>
+            <p className="text-[11px] text-emerald-800 leading-relaxed">
+              Siapkan dana belanja operasional (misal: Rp 100 Juta). Setiap pembelian komoditas/emas secara tunai akan otomatis memotong uang kas toko ini secara realtime.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Jumlah Uang Kas Masuk (Rp) <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="number"
+              required
+              min="1000"
+              placeholder="Contoh: 100000000"
+              value={kasModalForm.jumlah}
+              onChange={(e) => setKasModalForm({ ...kasModalForm, jumlah: e.target.value })}
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-black font-mono-num text-slate-900 focus:border-emerald-500 focus:outline-none"
+            />
+            {kasModalForm.jumlah && (
+              <p className="text-xs font-bold text-emerald-600 mt-1 font-mono-num">
+                {formatRupiah(kasModalForm.jumlah)}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Kategori Kas
+            </label>
+            <input
+              type="text"
+              required
+              value={kasModalForm.kategori}
+              onChange={(e) => setKasModalForm({ ...kasModalForm, kategori: e.target.value })}
+              className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Tanggal Kas Masuk
+            </label>
+            <input
+              type="date"
+              required
+              value={kasModalForm.tanggal}
+              onChange={(e) => setKasModalForm({ ...kasModalForm, tanggal: e.target.value })}
+              className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Keterangan
+            </label>
+            <input
+              type="text"
+              value={kasModalForm.keterangan}
+              onChange={(e) => setKasModalForm({ ...kasModalForm, keterangan: e.target.value })}
+              className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-emerald-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              disabled={submittingKas}
+              onClick={() => setIsKasModalOpen(false)}
+              className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={submittingKas}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center gap-2"
+            >
+              {submittingKas && (
+                <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              )}
+              <span>Simpan Uang Kas</span>
             </button>
           </div>
         </form>

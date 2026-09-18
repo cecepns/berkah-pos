@@ -8,6 +8,7 @@ import {
   Users,
   CreditCard,
   Wallet,
+  Banknote,
   BarChart3,
   Settings,
   X,
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { to: '/pelanggan', label: 'Pelanggan & Petani', icon: Users },
   { to: '/hutang', label: 'Buku Hutang', icon: CreditCard },
   { to: '/titipan', label: 'Tabungan Titipan', icon: Wallet },
+  { to: '/kas', label: 'Uang Kas Toko', icon: Banknote },
   { to: '/laporan', label: 'Laporan & Rekap', icon: BarChart3 },
   { to: '/pengaturan', label: 'Pengaturan', icon: Settings },
 ];

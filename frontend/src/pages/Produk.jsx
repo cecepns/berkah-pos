@@ -298,7 +298,14 @@ export default function Produk() {
                             )}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-900">{item.nama}</div>
+                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span>{item.nama}</span>
+                              {item.kode?.startsWith('KMD-') && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-semibold">
+                                  Auto-Komoditas
+                                </span>
+                              )}
+                            </div>
                             {item.deskripsi && (
                               <div className="text-[11px] text-slate-500 truncate max-w-xs">
                                 {item.deskripsi}

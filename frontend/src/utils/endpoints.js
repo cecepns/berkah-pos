@@ -60,6 +60,13 @@ export const API_ENDPOINTS = {
     CREATE: '/titipan',
   },
 
+  KAS: {
+    LIST: '/kas',
+    CREATE: '/kas',
+    UPDATE: (id) => `/kas/${id}`,
+    DELETE: (id) => `/kas/${id}`,
+  },
+
   LAPORAN: {
     RINGKASAN: '/laporan/ringkasan',
     PERIODIK: '/laporan/periodik',

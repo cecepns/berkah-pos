@@ -12,6 +12,7 @@ import Produk from '@/pages/Produk';
 import Pelanggan from '@/pages/Pelanggan';
 import Hutang from '@/pages/Hutang';
 import Titipan from '@/pages/Titipan';
+import Kas from '@/pages/Kas';
 import Laporan from '@/pages/Laporan';
 import Pengaturan from '@/pages/Pengaturan';
 
@@ -66,6 +67,7 @@ export default function App() {
             <Route path="pelanggan" element={<Pelanggan />} />
             <Route path="hutang" element={<Hutang />} />
             <Route path="titipan" element={<Titipan />} />
+            <Route path="kas" element={<Kas />} />
             <Route path="laporan" element={<Laporan />} />
             <Route path="pengaturan" element={<Pengaturan />} />
             <Route path="*" element={<Navigate to="/" replace />} />

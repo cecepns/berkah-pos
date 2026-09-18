@@ -151,6 +151,8 @@ export default function Komoditas() {
       berat_kotor: '',
       potongan_persen: '0',
       potongan_nilai: '0',
+      pembagi_1: '',
+      pembagi_2: '',
       satuan: 'kg',
       kadar: 'TBS Matang',
       harga_satuan: String(defPrice),
@@ -194,9 +196,25 @@ export default function Komoditas() {
   }
   const netto = Math.max(0, bruto - potVal);
   const harga = Number(form.harga_satuan) || 0;
-  const subtotal = Math.round(netto * harga);
+  const grossTotal = Math.round(bruto * harga);
+
+  let afterPotong = grossTotal;
+  if (pct > 0) {
+    afterPotong = Math.round(grossTotal * (1 - pct / 100));
+  } else if (potVal > 0) {
+    afterPotong = Math.round(netto * harga);
+  } else {
+    afterPotong = Math.round(netto * harga);
+  }
+
+  const bagi1 = Number(form.pembagi_1) || 0;
+  const afterBagi1 = bagi1 > 0 ? Math.round(afterPotong / bagi1) : afterPotong;
+
+  const bagi2 = Number(form.pembagi_2) || 0;
+  const afterBagi2 = bagi2 > 0 ? Math.round(afterBagi1 / bagi2) : afterBagi1;
+
   const biayaLain = Number(form.biaya_lain) || 0;
-  const totalBayar = Math.max(0, subtotal - biayaLain);
+  const totalBayar = Math.max(0, afterBagi2 - biayaLain);
 
   // Handle Submit Form
   const handleSubmit = async (e) => {
@@ -216,6 +234,15 @@ export default function Komoditas() {
 
     setFormSubmitting(true);
     try {
+      let catatanTeks = form.catatan || '';
+      if (bagi1 > 0 || bagi2 > 0) {
+        const bagiNotes = [
+          bagi1 > 0 ? `Dibagi ${bagi1}` : null,
+          bagi2 > 0 ? `Dibagi ${bagi2}` : null,
+        ].filter(Boolean).join(', ');
+        catatanTeks = catatanTeks ? `${catatanTeks} (${bagiNotes})` : bagiNotes;
+      }
+
       const payload = {
         pelanggan_id: form.pelanggan_id || null,
         nama_pelanggan: form.nama_pelanggan,
@@ -223,11 +250,17 @@ export default function Komoditas() {
         berat_kotor: bruto,
         potongan_persen: pct,
         potongan_nilai: potVal,
+        pembagi_1: form.pembagi_1 || null,
+        pembagi_2: form.pembagi_2 || null,
+        gross_total: grossTotal,
+        after_potong: afterPotong,
+        after_bagi_1: afterBagi1,
+        after_bagi_2: afterBagi2,
         berat_bersih: netto,
         satuan: form.satuan,
         kadar: form.kadar,
         harga_satuan: harga,
-        subtotal,
+        subtotal: afterPotong,
         biaya_lain: biayaLain,
         total_bayar: totalBayar,
         metode_bayar: form.metode_bayar,
@@ -239,7 +272,7 @@ export default function Komoditas() {
           form.metode_bayar === 'masuk_titipan'
             ? Math.min(totalBayar, Number(form.jumlah_masuk_titipan) || totalBayar)
             : 0,
-        catatan: form.catatan,
+        catatan: catatanTeks,
         tanggal: form.tanggal,
       };
 
@@ -643,6 +676,77 @@ export default function Komoditas() {
                 />
               </div>
             </div>
+          </div>
+
+          {/* Pembagian / Bagi Hasil (Opsional - Contoh: Dibagi 2, Dibagi 6) */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">
+                Pembagian Hasil Mitra / Pekerja (Opsional)
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Contoh: Dibagi 2 lalu Dibagi 6
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  Pembagian Tahap 1 (Misal: Dibagi 2)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  placeholder="Kosongkan jika tidak dibagi"
+                  value={form.pembagi_1}
+                  onChange={(e) => setForm({ ...form, pembagi_1: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono-num text-slate-900 focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">
+                  Pembagian Tahap 2 (Misal: Dibagi 6)
+                </label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  placeholder="Kosongkan jika tidak dibagi"
+                  value={form.pembagi_2}
+                  onChange={(e) => setForm({ ...form, pembagi_2: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono-num text-slate-900 focus:border-amber-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {(bagi1 > 0 || bagi2 > 0 || pct > 0) && (
+              <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1 font-mono-num">
+                <div className="flex justify-between text-slate-600">
+                  <span>1. Subtotal Awal ({formatWeight(bruto, form.satuan)} @ {formatRupiah(harga)}):</span>
+                  <span>{formatRupiah(grossTotal)}</span>
+                </div>
+                {pct > 0 && (
+                  <div className="flex justify-between text-amber-700">
+                    <span>2. Setelah Potong {pct}%:</span>
+                    <span>{formatRupiah(afterPotong)}</span>
+                  </div>
+                )}
+                {bagi1 > 0 && (
+                  <div className="flex justify-between text-blue-700">
+                    <span>3. Setelah Dibagi {bagi1}:</span>
+                    <span>{formatRupiah(afterBagi1)}</span>
+                  </div>
+                )}
+                {bagi2 > 0 && (
+                  <div className="flex justify-between text-purple-700">
+                    <span>4. Setelah Dibagi {bagi2}:</span>
+                    <span>{formatRupiah(afterBagi2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Payment & Settlement */}

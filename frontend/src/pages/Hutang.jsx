@@ -202,6 +202,7 @@ export default function Hutang() {
       const payload = {
         kode_bayar: `BYR-${String(Date.now()).slice(-5)}`,
         hutang_id: payingHutang.id,
+        pelanggan_id: payingHutang.pelanggan_id,
         jumlah_bayar: bayar,
         metode_bayar: payForm.metode_bayar,
         catatan: payForm.catatan,

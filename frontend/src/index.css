@@ -41,18 +41,20 @@
   @apply w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all;
 }
 
-/* Thermal receipt print layout */
+/* Thermal receipt & Report print layouts */
 @media print {
-  body * {
-    visibility: hidden;
+  /* Thermal Receipt Print Mode */
+  body.printing-receipt * {
+    visibility: hidden !important;
   }
-  #thermal-receipt, #thermal-receipt * {
-    visibility: visible;
+  body.printing-receipt #thermal-receipt,
+  body.printing-receipt #thermal-receipt * {
+    visibility: visible !important;
   }
-  #thermal-receipt {
-    position: absolute;
-    left: 0;
-    top: 0;
+  body.printing-receipt #thermal-receipt {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
     max-width: 58mm !important;
     margin: 0 !important;
@@ -64,8 +66,27 @@
     border: none !important;
   }
 
+  /* Regular Document / Report Print Mode */
+  body:not(.printing-receipt) .no-print,
+  body:not(.printing-receipt) aside,
+  body:not(.printing-receipt) header {
+    display: none !important;
+  }
+
+  body:not(.printing-receipt) main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  body:not(.printing-receipt) #report-printable {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
   @page {
-    margin: 0;
+    margin: 8mm;
     size: auto;
   }
 }

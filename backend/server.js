@@ -717,7 +717,9 @@ app.post('/api/transaksi-beli', async (req, res) => {
     const unitPrice = parseFloat(harga_satuan);
     const subtotal = Math.round(netWeight * unitPrice);
     const extraCost = parseFloat(biaya_lain) || 0;
-    const totalBayar = subtotal - extraCost;
+    const totalBayar = req.body.total_bayar !== undefined 
+      ? Math.max(0, parseFloat(req.body.total_bayar)) 
+      : Math.max(0, subtotal - extraCost);
 
     // Generate No Nota Unik
     const [maxRow] = await connection.query('SELECT MAX(id) as maxId FROM transaksi_beli');
@@ -1275,7 +1277,15 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
       tanggal = new Date().toISOString().slice(0, 10),
     } = req.body;
 
-    if (!pelanggan_id || !jumlah_bayar) {
+    let targetPelangganId = pelanggan_id;
+    if (!targetPelangganId && hutang_id) {
+      const [hRows] = await connection.query('SELECT pelanggan_id FROM hutang WHERE id = ?', [hutang_id]);
+      if (hRows.length > 0) {
+        targetPelangganId = hRows[0].pelanggan_id;
+      }
+    }
+
+    if (!targetPelangganId || !jumlah_bayar) {
       await connection.rollback();
       return res.status(400).json({ success: false, message: 'Pelanggan dan jumlah bayar wajib diisi!' });
     }
@@ -1284,7 +1294,7 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
 
     const [custRows] = await connection.query(
       'SELECT * FROM pelanggan WHERE id = ? FOR UPDATE',
-      [pelanggan_id]
+      [targetPelangganId]
     );
     if (custRows.length === 0) {
       await connection.rollback();
@@ -1296,7 +1306,7 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
     const newDebt = Math.max(0, prevDebt - payAmount);
 
     // Update hutang pelanggan
-    await connection.query('UPDATE pelanggan SET saldo_hutang = ? WHERE id = ?', [newDebt, pelanggan_id]);
+    await connection.query('UPDATE pelanggan SET saldo_hutang = ? WHERE id = ?', [newDebt, targetPelangganId]);
 
     // Jika ada hutang_id spesifik, kurangi sisa_hutang pada tabel hutang
     if (hutang_id) {
@@ -1315,7 +1325,7 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
     if (metode_bayar === 'saldo_titipan') {
       const prevSaving = cust.saldo_titipan || 0;
       const newSaving = Math.max(0, prevSaving - payAmount);
-      await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newSaving, pelanggan_id]);
+      await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newSaving, targetPelangganId]);
 
       const kode_titipan = `TTP-${Date.now().toString().slice(-4)}`;
       await connection.query(
@@ -1325,7 +1335,7 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
         ) VALUES (?, ?, 'potong_bayar_hutang', ?, ?, ?, ?, ?)`,
         [
           kode_titipan,
-          pelanggan_id,
+          targetPelangganId,
           payAmount,
           prevSaving,
           newSaving,
@@ -1341,7 +1351,7 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
         kode_bayar, hutang_id, pelanggan_id, jumlah_bayar, metode_bayar, 
         sisa_sebelum, sisa_sesudah, catatan, tanggal
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [kode_bayar, hutang_id || null, pelanggan_id, payAmount, metode_bayar, prevDebt, newDebt, catatan || null, tanggal]
+      [kode_bayar, hutang_id || null, targetPelangganId, payAmount, metode_bayar, prevDebt, newDebt, catatan || null, tanggal]
     );
 
     await connection.commit();
@@ -1549,11 +1559,39 @@ app.get('/api/laporan/ringkasan', async (req, res) => {
 // Laporan Periodik (Harian, Bulanan, Tahunan)
 app.get('/api/laporan/periodik', async (req, res) => {
   try {
-    const { periode = 'harian' } = req.query;
+    const { periode = 'harian', startDate, endDate } = req.query;
 
     let dateFormat = '%Y-%m-%d';
     if (periode === 'bulanan') dateFormat = '%Y-%m';
     if (periode === 'tahunan') dateFormat = '%Y';
+
+    let filterBeli = '';
+    let filterJual = '';
+    const unionBeliParams = [dateFormat];
+    const unionJualParams = [dateFormat];
+    const beliParams = [];
+    const jualParams = [];
+
+    if (startDate) {
+      filterBeli += ' AND tanggal >= ?';
+      filterJual += ' AND tanggal >= ?';
+      unionBeliParams.push(startDate);
+      unionJualParams.push(startDate);
+      beliParams.push(startDate);
+      jualParams.push(startDate);
+    }
+    if (endDate) {
+      filterBeli += ' AND tanggal <= ?';
+      filterJual += ' AND tanggal <= ?';
+      unionBeliParams.push(endDate);
+      unionJualParams.push(endDate);
+      beliParams.push(endDate);
+      jualParams.push(endDate);
+    }
+    beliParams.unshift(dateFormat);
+    beliParams.push(dateFormat);
+    jualParams.unshift(dateFormat);
+    jualParams.push(dateFormat);
 
     const query = `
       SELECT 
@@ -1564,9 +1602,9 @@ app.get('/api/laporan/periodik', async (req, res) => {
         COALESCE(beli.sawit_kg, 0) as sawit_kg,
         COALESCE(beli.karet_kg, 0) as karet_kg
       FROM (
-        SELECT DISTINCT DATE_FORMAT(tanggal, ?) as label FROM transaksi_beli
+        SELECT DISTINCT DATE_FORMAT(tanggal, ?) as label FROM transaksi_beli WHERE 1=1 ${filterBeli}
         UNION
-        SELECT DISTINCT DATE_FORMAT(tanggal, ?) as label FROM transaksi_jual
+        SELECT DISTINCT DATE_FORMAT(tanggal, ?) as label FROM transaksi_jual WHERE 1=1 ${filterJual}
       ) period_data
       LEFT JOIN (
         SELECT 
@@ -1576,6 +1614,7 @@ app.get('/api/laporan/periodik', async (req, res) => {
           SUM(CASE WHEN jenis_komoditas = 'sawit' THEN berat_bersih ELSE 0 END) as sawit_kg,
           SUM(CASE WHEN jenis_komoditas = 'karet' THEN berat_bersih ELSE 0 END) as karet_kg
         FROM transaksi_beli
+        WHERE 1=1 ${filterBeli}
         GROUP BY DATE_FORMAT(tanggal, ?)
       ) beli ON period_data.label = beli.label
       LEFT JOIN (
@@ -1583,18 +1622,26 @@ app.get('/api/laporan/periodik', async (req, res) => {
           DATE_FORMAT(tanggal, ?) as label,
           SUM(total_akhir) as total_jual
         FROM transaksi_jual
+        WHERE 1=1 ${filterJual}
         GROUP BY DATE_FORMAT(tanggal, ?)
       ) jual ON period_data.label = jual.label
       ORDER BY period_data.label DESC
-      LIMIT 30
+      LIMIT 100
     `;
 
-    const [rows] = await db.query(query, [dateFormat, dateFormat, dateFormat, dateFormat, dateFormat, dateFormat]);
+    const allParams = [
+      ...unionBeliParams,
+      ...unionJualParams,
+      ...beliParams,
+      ...jualParams,
+    ];
+
+    const [rows] = await db.query(query, allParams);
 
     return res.json({
       success: true,
       data: rows,
-      meta: { periode },
+      meta: { periode, startDate: startDate || null, endDate: endDate || null },
     });
   } catch (error) {
     console.error('GET /api/laporan/periodik error:', error);

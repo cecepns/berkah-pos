@@ -29,6 +29,7 @@ export default function Titipan() {
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
@@ -47,7 +48,13 @@ export default function Titipan() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [receiptData, setReceiptData] = useState(null);
 
-  const fetchTitipan = async (page = pagination.page, limit = pagination.limit, q = search, type = filterType) => {
+  const fetchTitipan = async (
+    page = pagination.page,
+    limit = pagination.limit,
+    q = search,
+    type = filterType,
+    pelangganId = filterCustomer?.value
+  ) => {
     setLoading(true);
     try {
       const res = await request.get(API_ENDPOINTS.TITIPAN.LIST, {
@@ -55,6 +62,7 @@ export default function Titipan() {
         limit,
         search: q,
         jenis_transaksi: type,
+        pelanggan_id: pelangganId || undefined,
       });
       if (res?.success) {
         setList(res.data || []);
@@ -85,8 +93,8 @@ export default function Titipan() {
   }, []);
 
   useEffect(() => {
-    fetchTitipan(1, pagination.limit, search, filterType);
-  }, [search, filterType, pagination.limit]);
+    fetchTitipan(1, pagination.limit, search, filterType, filterCustomer?.value);
+  }, [search, filterType, filterCustomer, pagination.limit]);
 
   let customerSearchTimeout = null;
   const loadCustomerOptions = (inputValue) => {
@@ -262,8 +270,8 @@ export default function Titipan() {
       </div>
 
       {/* Filter & Search */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+      <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto pb-1 lg:pb-0 no-scrollbar">
           {[
             { id: '', label: 'Semua Mutasi' },
             { id: 'setor', label: 'Setor Tunai' },
@@ -287,12 +295,63 @@ export default function Titipan() {
           ))}
         </div>
 
-        <div className="w-full md:w-72">
-          <DebouncedSearch
-            value={search}
-            onChange={(val) => setSearch(val)}
-            placeholder="Cari kode / nama nasabah..."
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
+          {/* Dropdown React Select Search By API Pelanggan */}
+          <div className="w-full sm:w-64">
+            <AsyncSelect
+              isClearable
+              cacheOptions
+              defaultOptions
+              loadOptions={loadCustomerOptions}
+              value={filterCustomer}
+              onChange={(opt) => setFilterCustomer(opt || null)}
+              placeholder="🔍 Cari & Filter Nasabah..."
+              noOptionsMessage={({ inputValue }) =>
+                inputValue ? 'Mitra tidak ditemukan' : 'Ketik nama nasabah...'
+              }
+              loadingMessage={() => 'Mencari mitra di server...'}
+              menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+              styles={{
+                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                control: (base) => ({
+                  ...base,
+                  minHeight: '38px',
+                  borderRadius: '0.75rem',
+                  borderColor: '#cbd5e1',
+                  fontSize: '0.75rem',
+                }),
+                menuList: (base) => ({ ...base, maxHeight: '200px' }),
+              }}
+              formatOptionLabel={(option) => {
+                const c = option.data;
+                if (!c) return <span>{option.label}</span>;
+                return (
+                  <div className="flex flex-col py-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 text-xs">{c.nama}</span>
+                      <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
+                        {c.kode}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 mt-0.5">
+                      <span className="capitalize">{c.kategori} {c.no_hp ? `• ${c.no_hp}` : ''}</span>
+                      <span className="font-semibold text-blue-600 font-mono-num">
+                        Saldo: {formatRupiah(c.saldo_titipan || 0)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }}
+            />
+          </div>
+
+          <div className="w-full sm:w-56">
+            <DebouncedSearch
+              value={search}
+              onChange={(val) => setSearch(val)}
+              placeholder="Cari kode transaksi..."
+            />
+          </div>
         </div>
       </div>
 
@@ -521,10 +580,10 @@ export default function Titipan() {
             totalPages={pagination.totalPages}
             totalItems={pagination.total}
             limit={pagination.limit}
-            onPageChange={(p) => fetchTitipan(p, pagination.limit, search, filterType)}
+            onPageChange={(p) => fetchTitipan(p, pagination.limit, search, filterType, filterCustomer?.value)}
             onLimitChange={(l) => {
               setPagination((prev) => ({ ...prev, limit: l }));
-              fetchTitipan(1, l, search, filterType);
+              fetchTitipan(1, l, search, filterType, filterCustomer?.value);
             }}
           />
         </div>

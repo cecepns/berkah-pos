@@ -58,8 +58,15 @@ export default function Hutang() {
   });
 
   const [receiptData, setReceiptData] = useState(null);
+  const [filterCustomer, setFilterCustomer] = useState(null);
 
-  const fetchHutang = async (page = pagination.page, limit = pagination.limit, q = search, st = statusFilter) => {
+  const fetchHutang = async (
+    page = pagination.page,
+    limit = pagination.limit,
+    q = search,
+    st = statusFilter,
+    pelangganId = filterCustomer?.value
+  ) => {
     setLoading(true);
     try {
       const res = await request.get(API_ENDPOINTS.HUTANG.LIST, {
@@ -67,6 +74,7 @@ export default function Hutang() {
         limit,
         search: q,
         status: st,
+        pelanggan_id: pelangganId || undefined,
       });
       if (res?.success) {
         setList(res.data || []);
@@ -81,13 +89,19 @@ export default function Hutang() {
     }
   };
 
-  const fetchHistory = async (page = historyPagination.page, limit = historyPagination.limit, q = historySearch) => {
+  const fetchHistory = async (
+    page = historyPagination.page,
+    limit = historyPagination.limit,
+    q = historySearch,
+    pelangganId = filterCustomer?.value
+  ) => {
     setLoadingHistory(true);
     try {
       const res = await request.get(API_ENDPOINTS.PEMBAYARAN_HUTANG.LIST, {
         page,
         limit,
         search: q,
+        pelanggan_id: pelangganId || undefined,
       });
       if (res?.success) {
         setHistoryList(res.data || []);
@@ -119,11 +133,11 @@ export default function Hutang() {
 
   useEffect(() => {
     if (activeTab === 'hutang') {
-      fetchHutang(1, pagination.limit, search, statusFilter);
+      fetchHutang(1, pagination.limit, search, statusFilter, filterCustomer?.value);
     } else {
-      fetchHistory(1, historyPagination.limit, historySearch);
+      fetchHistory(1, historyPagination.limit, historySearch, filterCustomer?.value);
     }
-  }, [activeTab, search, statusFilter, historySearch, pagination.limit, historyPagination.limit]);
+  }, [activeTab, search, statusFilter, historySearch, filterCustomer, pagination.limit, historyPagination.limit]);
 
   const [selectedCustomer, setSelectedCustomer] = useState(null);
 
@@ -324,17 +338,9 @@ export default function Hutang() {
       {/* Content for Tab: Hutang */}
       {activeTab === 'hutang' && (
         <div className="space-y-3 sm:space-y-4">
-          {/* Status Filter & Search */}
-          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
-            <div className="w-full sm:w-72 order-1 sm:order-2">
-              <DebouncedSearch
-                value={search}
-                onChange={(val) => setSearch(val)}
-                placeholder="Cari nama mitra / kode kasbon..."
-              />
-            </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto order-2 sm:order-1 pb-1 sm:pb-0">
+          {/* Status Filter & Customer AsyncSelect Search */}
+          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full lg:w-auto pb-1 lg:pb-0">
               {[
                 { id: '', label: 'Semua Status' },
                 { id: 'belum_lunas', label: 'Belum Lunas' },
@@ -354,6 +360,67 @@ export default function Hutang() {
                   {st.label}
                 </button>
               ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
+              {/* Filter Dropdown React Select Search By API Pelanggan */}
+              <div className="w-full sm:w-64">
+                <AsyncSelect
+                  isClearable
+                  cacheOptions
+                  defaultOptions
+                  loadOptions={loadCustomerOptions}
+                  value={filterCustomer}
+                  onChange={(opt) => setFilterCustomer(opt || null)}
+                  placeholder="🔍 Filter Mitra Pelanggan..."
+                  noOptionsMessage={({ inputValue }) =>
+                    inputValue ? 'Mitra tidak ditemukan' : 'Ketik nama mitra...'
+                  }
+                  loadingMessage={() => 'Mencari mitra di server...'}
+                  menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                  styles={{
+                    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    control: (base) => ({
+                      ...base,
+                      minHeight: '38px',
+                      borderRadius: '0.75rem',
+                      borderColor: '#cbd5e1',
+                      fontSize: '0.75rem',
+                    }),
+                    menuList: (base) => ({ ...base, maxHeight: '200px' }),
+                  }}
+                  formatOptionLabel={(option) => {
+                    const c = option.data;
+                    if (!c) return <span>{option.label}</span>;
+                    return (
+                      <div className="flex flex-col py-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800 text-xs">{c.nama}</span>
+                          <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
+                            {c.kode}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 mt-0.5">
+                          <span className="capitalize">{c.kategori} {c.no_hp ? `• ${c.no_hp}` : ''}</span>
+                          {Number(c.saldo_hutang) > 0 && (
+                            <span className="font-bold text-rose-600 font-mono-num">
+                              Kasbon: {formatRupiah(c.saldo_hutang)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }}
+                />
+              </div>
+
+              <div className="w-full sm:w-56">
+                <DebouncedSearch
+                  value={search}
+                  onChange={(val) => setSearch(val)}
+                  placeholder="Cari kode kasbon..."
+                />
+              </div>
             </div>
           </div>
 
@@ -541,10 +608,10 @@ export default function Hutang() {
                 totalPages={pagination.totalPages}
                 totalItems={pagination.total}
                 limit={pagination.limit}
-                onPageChange={(p) => fetchHutang(p, pagination.limit, search, statusFilter)}
+                onPageChange={(p) => fetchHutang(p, pagination.limit, search, statusFilter, filterCustomer?.value)}
                 onLimitChange={(l) => {
                   setPagination((prev) => ({ ...prev, limit: l }));
-                  fetchHutang(1, l, search, statusFilter);
+                  fetchHutang(1, l, search, statusFilter, filterCustomer?.value);
                 }}
               />
             </div>
@@ -555,14 +622,61 @@ export default function Hutang() {
       {/* Content for Tab: Riwayat Pembayaran */}
       {activeTab === 'riwayat' && (
         <div className="space-y-3 sm:space-y-4">
-          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <h3 className="text-xs sm:text-sm font-bold text-slate-900">Log Transaksi Pembayaran Kasbon</h3>
-            <div className="w-full sm:w-72">
-              <DebouncedSearch
-                value={historySearch}
-                onChange={(val) => setHistorySearch(val)}
-                placeholder="Cari kode bayar / nama mitra..."
-              />
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
+              <div className="w-full sm:w-64">
+                <AsyncSelect
+                  isClearable
+                  cacheOptions
+                  defaultOptions
+                  loadOptions={loadCustomerOptions}
+                  value={filterCustomer}
+                  onChange={(opt) => setFilterCustomer(opt || null)}
+                  placeholder="🔍 Filter Mitra Pelanggan..."
+                  noOptionsMessage={({ inputValue }) =>
+                    inputValue ? 'Mitra tidak ditemukan' : 'Ketik nama mitra...'
+                  }
+                  loadingMessage={() => 'Mencari mitra di server...'}
+                  menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                  styles={{
+                    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                    control: (base) => ({
+                      ...base,
+                      minHeight: '38px',
+                      borderRadius: '0.75rem',
+                      borderColor: '#cbd5e1',
+                      fontSize: '0.75rem',
+                    }),
+                    menuList: (base) => ({ ...base, maxHeight: '200px' }),
+                  }}
+                  formatOptionLabel={(option) => {
+                    const c = option.data;
+                    if (!c) return <span>{option.label}</span>;
+                    return (
+                      <div className="flex flex-col py-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800 text-xs">{c.nama}</span>
+                          <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
+                            {c.kode}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 mt-0.5">
+                          <span className="capitalize">{c.kategori} {c.no_hp ? `• ${c.no_hp}` : ''}</span>
+                        </div>
+                      </div>
+                    );
+                  }}
+                />
+              </div>
+
+              <div className="w-full sm:w-56">
+                <DebouncedSearch
+                  value={historySearch}
+                  onChange={(val) => setHistorySearch(val)}
+                  placeholder="Cari kode bayar..."
+                />
+              </div>
             </div>
           </div>
 
@@ -715,10 +829,10 @@ export default function Hutang() {
                 totalPages={historyPagination.totalPages}
                 totalItems={historyPagination.total}
                 limit={historyPagination.limit}
-                onPageChange={(p) => fetchHistory(p, historyPagination.limit, historySearch)}
+                onPageChange={(p) => fetchHistory(p, historyPagination.limit, historySearch, filterCustomer?.value)}
                 onLimitChange={(l) => {
                   setHistoryPagination((prev) => ({ ...prev, limit: l }));
-                  fetchHistory(1, l, historySearch);
+                  fetchHistory(1, l, historySearch, filterCustomer?.value);
                 }}
               />
             </div>

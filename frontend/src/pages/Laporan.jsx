@@ -10,6 +10,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Sparkles,
+  PackageCheck,
 } from 'lucide-react';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
@@ -231,19 +232,19 @@ export default function Laporan() {
               </div>
             </div>
 
-            {/* 4. Rekap Periode */}
+            {/* 4. Total Volume Penjualan */}
             <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-slate-400 uppercase font-bold">
-                  Total Hari Rekap
+                  Total Volume Penjualan
                 </span>
-                <TrendingUp className="w-5 h-5 text-blue-600" />
+                <PackageCheck className="w-5 h-5 text-indigo-600" />
               </div>
-              <div className="text-2xl font-black text-slate-900 font-mono-num mb-1">
-                {reportList.length} Hari
+              <div className="text-2xl font-black text-indigo-600 font-mono-num mb-1">
+                {totalQtyJual.toLocaleString('id-ID')} <span className="text-sm font-semibold text-slate-500">Unit / Item</span>
               </div>
-              <div className="text-xs text-slate-400">
-                Data aktif dalam rentang tanggal
+              <div className="text-xs text-slate-400 truncate" title={`${reportList.length} hari rekap aktif`}>
+                Total volume fisik keluar kasir ({reportList.length} hari rekap)
               </div>
             </div>
           </div>
@@ -328,19 +329,26 @@ export default function Laporan() {
                 </div>
               </div>
 
-              {/* Total Qty Kasir */}
+              {/* Total Volume Penjualan */}
               <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/70 space-y-2">
                 <div className="flex items-center justify-between text-xs text-indigo-900 font-bold">
-                  <span>TOTAL PRODUK TERJUAL</span>
+                  <span>TOTAL VOLUME PENJUALAN</span>
                   <span className="text-[10px] bg-indigo-200/80 px-1.5 py-0.5 rounded font-mono">Unit</span>
                 </div>
                 <div className="space-y-1 text-xs">
                   <div className="text-2xl font-black text-indigo-950 font-mono-num pt-1">
-                    {totalQtyJual.toLocaleString('id-ID')}
+                    {totalQtyJual.toLocaleString('id-ID')} <span className="text-xs font-semibold text-indigo-700">Unit</span>
                   </div>
                   <div className="text-[11px] text-indigo-700">
                     Total fisik item & komoditas keluar dari kasir toko
                   </div>
+                  {(totalJualSawit > 0 || totalJualEmas > 0 || totalJualKaret > 0) && (
+                    <div className="pt-1.5 border-t border-indigo-200/60 text-[10px] text-indigo-900 font-medium flex flex-wrap gap-x-2 gap-y-0.5">
+                      {totalJualSawit > 0 && <span>Sawit: {formatWeight(totalJualSawit, 'kg')}</span>}
+                      {totalJualEmas > 0 && <span>Emas: {formatWeight(totalJualEmas, 'gram')}</span>}
+                      {totalJualKaret > 0 && <span>Karet: {formatWeight(totalJualKaret, 'kg')}</span>}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -380,7 +388,7 @@ export default function Laporan() {
                       <th className="py-3 px-3 text-right">Emas (In / Out)</th>
                       <th className="py-3 px-3 text-right">Sawit (In / Out)</th>
                       <th className="py-3 px-3 text-right">Karet (In / Out)</th>
-                      <th className="py-3 px-3 text-right">Qty Kasir</th>
+                      <th className="py-3 px-3 text-right">Vol. Penjualan (Qty)</th>
                       <th className="py-3 px-3 text-right">Arus Kas (Jual - Beli)</th>
                     </tr>
                   </thead>
@@ -458,7 +466,7 @@ export default function Laporan() {
                         <div className="text-amber-800">In: {formatWeight(totalKaret, 'kg')}</div>
                         <div className="text-emerald-700">Out: {formatWeight(totalJualKaret, 'kg')}</div>
                       </td>
-                      <td className="py-3 px-3 text-right font-mono-num">
+                      <td className="py-3 px-3 text-right font-mono-num font-bold text-indigo-700">
                         {totalQtyJual.toLocaleString('id-ID')} unit
                       </td>
                       <td

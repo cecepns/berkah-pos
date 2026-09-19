@@ -1043,7 +1043,7 @@ export default function Komoditas() {
                   </label>
                   {pct > 0 && grossTotal > 0 && (
                     <span className="text-[10.5px] font-bold text-amber-700 font-mono-num">
-                      Lahan: Rp {formatNumber(Math.round((grossTotal * pct) / 100), 0)}
+                      Lahan: {formatRupiah(Math.round((grossTotal * pct) / 100))}
                     </span>
                   )}
                 </div>

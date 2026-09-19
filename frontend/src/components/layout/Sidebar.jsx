@@ -25,9 +25,10 @@ const NAV_ITEMS = [
   { to: '/pelanggan', label: 'Pelanggan & Petani', icon: Users },
   { to: '/hutang', label: 'Buku Hutang', icon: CreditCard },
   { to: '/titipan', label: 'Tabungan Titipan', icon: Wallet },
-  { to: '/kas', label: 'Uang Kas Toko', icon: Banknote },
-  { to: '/laporan', label: 'Laporan & Rekap', icon: BarChart3 },
-  { to: '/pengaturan', label: 'Pengaturan', icon: Settings },
+  { to: '/kas', label: 'Uang Kas Toko', icon: Banknote, role: 'admin' },
+  { to: '/laporan', label: 'Laporan & Rekap', icon: BarChart3, role: 'admin' },
+  { to: '/pegawai', label: 'Manajemen Pegawai', icon: UserCheck, role: 'admin' },
+  { to: '/pengaturan', label: 'Pengaturan', icon: Settings, role: 'admin' },
 ];
 
 export default function Sidebar({ isOpen, onClose }) {
@@ -81,7 +82,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Navigation Items */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !item.role || user?.role === item.role).map((item) => {
             const Icon = item.icon;
             return (
               <NavLink
@@ -116,15 +117,17 @@ export default function Sidebar({ isOpen, onClose }) {
           <div className="p-3 mx-3 mb-2 rounded-2xl bg-slate-50 border border-slate-200/80">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                  user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
+                }`}>
                   {user.nama?.charAt(0) || 'U'}
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-900 truncate">
                     {user.nama}
                   </div>
-                  <div className="text-[10px] text-slate-400 capitalize">
-                    {user.role} • {user.username}
+                  <div className="text-[10.5px] font-semibold text-slate-600 truncate">
+                    {user.role === 'admin' ? '👑 Bos (Admin)' : '👤 Karyawan (Kasir)'}
                   </div>
                 </div>
               </div>

@@ -237,138 +237,138 @@ export default function Kas() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header Page */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Banknote className="w-6 h-6 text-emerald-600" />
-            Buku Uang Kas Toko
+          <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0" />
+            <span>Buku Uang Kas Toko</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
             Pencatatan kas masuk (modal/setoran), kas keluar operasional, dan rekonsiliasi saldo kas riil toko.
           </p>
         </div>
 
         {/* Action Buttons: Kas Masuk & Kas Keluar */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => openCreateModal('keluar')}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs sm:text-sm transition-all shadow-2xs"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer"
           >
-            <Minus className="w-4 h-4 text-rose-600" />
-            <span>- Catat Kas Keluar</span>
+            <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 shrink-0" />
+            <span>Kas Keluar</span>
           </button>
 
           <button
             type="button"
             onClick={() => openCreateModal('masuk')}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition-all shadow-sm"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition-all shadow-sm cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>+ Catat Kas Masuk</span>
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span>Kas Masuk</span>
           </button>
         </div>
       </div>
 
       {/* 4 Financial Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Card 1: Saldo Kas Riil di Laci */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Saldo Kas di Laci Toko
+        <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
+              Saldo di Laci
             </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Wallet className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div
-            className={`text-2xl font-black font-mono-num mb-1 ${
+            className={`text-lg sm:text-2xl font-black font-mono-num mb-0.5 ${
               summary.saldo_kas >= 0 ? 'text-emerald-700' : 'text-rose-600'
             }`}
           >
             {formatRupiah(summary.saldo_kas)}
           </div>
-          <div className="text-[11px] text-slate-400">
-            Total Kas Masuk dikurangi Kas Keluar
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
+            Total Kas Masuk - Keluar
           </div>
         </div>
 
         {/* Card 2: Total Kas Masuk */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Total Kas Masuk
+        <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
+              Total Masuk
             </span>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <ArrowDownRight className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <ArrowDownRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-emerald-600 font-mono-num mb-1">
+          <div className="text-lg sm:text-2xl font-black text-emerald-600 font-mono-num mb-0.5">
             {formatRupiah(summary.total_masuk)}
           </div>
-          <div className="text-[11px] text-slate-400">
-            Modal awal, setoran & pemasukan
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
+            Modal & pemasukan
           </div>
         </div>
 
         {/* Card 3: Total Kas Keluar */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Total Kas Keluar
+        <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
+              Total Keluar
             </span>
-            <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-              <ArrowUpRight className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+              <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="text-2xl font-black text-rose-600 font-mono-num mb-1">
+          <div className="text-lg sm:text-2xl font-black text-rose-600 font-mono-num mb-0.5">
             {formatRupiah(summary.total_keluar)}
           </div>
-          <div className="text-[11px] text-slate-400">
-            Operasional, bensin, listrik & prive
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
+            Operasional & belanja
           </div>
         </div>
 
         {/* Card 4: Kas Hari Ini */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Arus Kas Hari Ini
+        <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
+              Kas Hari Ini
             </span>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div
-            className={`text-2xl font-black font-mono-num mb-1 ${
+            className={`text-lg sm:text-2xl font-black font-mono-num mb-0.5 ${
               summary.kas_hari_ini?.selisih >= 0 ? 'text-blue-600' : 'text-rose-600'
             }`}
           >
             {formatRupiah(summary.kas_hari_ini?.selisih || 0)}
           </div>
-          <div className="text-[11px] text-slate-400">
-            Masuk: +{formatRupiah(summary.kas_hari_ini?.masuk || 0)} | Keluar: -{formatRupiah(summary.kas_hari_ini?.keluar || 0)}
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
+            Net hari ini
           </div>
         </div>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-3">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-2.5 sm:space-y-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 sm:gap-3">
           {/* Realtime Debounced Search */}
           <div className="flex-1 max-w-md">
             <DebouncedSearch
               value={search}
               onChange={(val) => setSearch(val)}
-              placeholder="Cari kode transaksi, kategori, atau keterangan..."
+              placeholder="Cari transaksi, kategori, atau keterangan..."
             />
           </div>
 
           {/* Tipe Selector Tabs */}
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl flex-shrink-0">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl overflow-x-auto no-scrollbar flex-shrink-0">
             {[
               { id: '', label: 'Semua Tipe' },
               { id: 'masuk', label: 'Kas Masuk (+)' },
@@ -378,7 +378,7 @@ export default function Kas() {
                 key={tab.id}
                 type="button"
                 onClick={() => setTipeFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                   tipeFilter === tab.id
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -391,8 +391,8 @@ export default function Kas() {
         </div>
 
         {/* Date Filter Toolbar */}
-        <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
+        <div className="pt-2 border-t border-slate-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full md:w-auto pb-1 md:pb-0">
             <button
               type="button"
               onClick={() => setRangeQuick('hari_ini')}
@@ -419,13 +419,13 @@ export default function Kas() {
               onClick={() => setRangeQuick('semua')}
               className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-colors whitespace-nowrap"
             >
-              Semua Waktu
+              Semua
             </button>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full md:w-auto">
             <div className="flex items-center gap-1 text-xs text-slate-500">
-              <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+              <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span>Dari:</span>
               <input
                 type="date"
@@ -447,21 +447,103 @@ export default function Kas() {
         </div>
       </div>
 
-      {/* Main Table Card */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+      {/* Main Table / Mobile Cards */}
+      <div className="bg-white rounded-xl sm:rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
+        <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600" />
-            <h3 className="text-sm font-bold text-slate-900">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900">
               Riwayat Transaksi Buku Kas
             </h3>
           </div>
-          <span className="text-xs text-slate-500 font-semibold px-2.5 py-0.5 rounded-full bg-slate-100">
+          <span className="text-[11px] text-slate-500 font-semibold px-2 py-0.5 rounded-full bg-slate-100">
             {pagination.total} Catatan
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards (sm:hidden) */}
+        <div className="block sm:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="p-4"><TableSkeleton rows={4} cols={1} /></div>
+          ) : list.length === 0 ? (
+            <EmptyState
+              title="Belum Ada Transaksi Kas"
+              description="Catat kas masuk atau kas keluar operasional untuk memulai pembukuan uang kas."
+              actionLabel="+ Catat Kas Sekarang"
+              onAction={() => openCreateModal('masuk')}
+            />
+          ) : (
+            list.map((item) => {
+              const isMasuk = item.tipe === 'masuk';
+              return (
+                <div key={item.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono-num font-bold text-xs text-slate-800">{item.kode_transaksi}</span>
+                      <span className="text-[10px] text-slate-400">• {formatDate(item.tanggal)}</span>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase shrink-0 ${
+                        isMasuk
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}
+                    >
+                      {isMasuk ? (
+                        <ArrowDownRight className="w-3 h-3 text-emerald-600" />
+                      ) : (
+                        <ArrowUpRight className="w-3 h-3 text-rose-600" />
+                      )}
+                      Kas {item.tipe}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-slate-900 text-sm">{item.kategori}</div>
+                      {item.keterangan && (
+                        <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                          {item.keterangan}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div
+                        className={`text-sm font-black font-mono-num ${
+                          isMasuk ? 'text-emerald-700' : 'text-rose-600'
+                        }`}
+                      >
+                        {isMasuk ? '+' : '-'} {formatRupiah(item.jumlah)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(item)}
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors"
+                      title="Edit Transaksi"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteId(item.id)}
+                      className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors"
+                      title="Hapus Transaksi"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table (hidden sm:block) */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold border-b border-slate-100">
               <tr>

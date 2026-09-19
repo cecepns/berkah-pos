@@ -32,6 +32,15 @@
   background: #94a3b8;
 }
 
+/* Hide scrollbar utility for clean mobile horizontal scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /* Light Card & Panel Utilities */
 .clean-card {
   @apply bg-white border border-slate-200/90 rounded-2xl shadow-sm transition-all;

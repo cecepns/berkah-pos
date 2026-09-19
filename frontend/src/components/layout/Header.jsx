@@ -66,19 +66,21 @@ export default function Header({ onToggleSidebar, storeInfo }) {
         {/* Beli Komoditas Shortcut */}
         <Link
           to="/komoditas"
-          className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition-all whitespace-nowrap"
+          className="flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-2xs transition-all whitespace-nowrap"
+          title="Beli Komoditas"
         >
           <Scale className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Beli </span>Komoditas
+          <span className="hidden sm:inline">Komoditas</span>
         </Link>
 
         {/* Kasir POS Shortcut */}
         <Link
           to="/kasir"
-          className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all whitespace-nowrap"
+          className="flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 py-1.5 sm:px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all whitespace-nowrap"
+          title="Kasir POS Toko"
         >
           <ShoppingCart className="w-3.5 h-3.5" />
-          <span>Kasir<span className="hidden sm:inline"> POS</span></span>
+          <span className="hidden sm:inline">Kasir POS</span>
         </Link>
 
         {/* User Pill & Quick Logout */}

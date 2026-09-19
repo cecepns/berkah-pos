@@ -58,6 +58,7 @@ export const API_ENDPOINTS = {
   TITIPAN: {
     LIST: '/titipan',
     CREATE: '/titipan',
+    PERBAIKI_SALDO: '/titipan/perbaiki-saldo',
   },
 
   KAS: {
@@ -70,5 +71,18 @@ export const API_ENDPOINTS = {
   LAPORAN: {
     RINGKASAN: '/laporan/ringkasan',
     PERIODIK: '/laporan/periodik',
+  },
+
+  USERS: {
+    LIST: '/users',
+    DETAIL: (id) => `/users/${id}`,
+    CREATE: '/users',
+    UPDATE: (id) => `/users/${id}`,
+    DELETE: (id) => `/users/${id}`,
+  },
+
+  RESET: {
+    TRANSAKSI: '/pengaturan/reset-transaksi',
+    TOTAL: '/pengaturan/reset-total',
   },
 };

@@ -74,23 +74,40 @@ export default function ReceiptModal({
       let currentTotal = grossTotal;
       let nextNo = 2;
 
-      // Row 2: Potongan Persen
+      // Row 2: Potongan Persen / Bagian Pemilik Lahan
       const pct = Number(data.potongan_persen) || 0;
       if (pct > 0) {
+        const nominalPotongan = Math.round((grossTotal * pct) / 100);
         currentTotal = Number(data.after_potong) || Math.round(grossTotal * (1 - pct / 100));
         rows.push({
           no: `${nextNo}.`,
-          nama: `Potong ${pct}%`,
-          harga: '-',
+          nama: (
+            <div>
+              <span>Potong {pct}%</span>
+              <span className="block text-[10px] font-semibold text-slate-700">
+                (Bagian Lahan: Rp {formatNumber(nominalPotongan, 0)})
+              </span>
+            </div>
+          ),
+          harga: `-${formatNumber(nominalPotongan, 0)}`,
           jumlah: formatNumber(currentTotal, 0),
         });
         nextNo += 1;
       } else if (Number(data.potongan_nilai) > 0) {
-        currentTotal = Math.round((bruto - Number(data.potongan_nilai)) * harga);
+        const potVal = Number(data.potongan_nilai);
+        const potValRp = Math.round(potVal * harga);
+        currentTotal = Math.round((bruto - potVal) * harga);
         rows.push({
           no: `${nextNo}.`,
-          nama: `Potong ${data.potongan_nilai} ${satuan}`,
-          harga: '-',
+          nama: (
+            <div>
+              <span>Potong {potVal} {satuan}</span>
+              <span className="block text-[10px] font-semibold text-slate-700">
+                (Rp {formatNumber(potValRp, 0)})
+              </span>
+            </div>
+          ),
+          harga: `-${formatNumber(potValRp, 0)}`,
           jumlah: formatNumber(currentTotal, 0),
         });
         nextNo += 1;

@@ -65,6 +65,7 @@ const db = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  multipleStatements: true,
 });
 
 // Test MySQL connection on startup & ensure users table
@@ -251,6 +252,339 @@ app.get('/api/auth/demo-accounts', (req, res) => {
   });
 });
 
+
+// Middleware: Verifikasi Token Otentikasi
+const requireAuth = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Unauthorized - Token otentikasi tidak ditemukan' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.from(token, 'base64').toString('utf-8'));
+    } catch (e) {
+      return res.status(401).json({ success: false, message: 'Token tidak valid' });
+    }
+
+    const [rows] = await db.query(
+      'SELECT id, username, nama, role, status FROM users WHERE id = ?',
+      [payload.id]
+    );
+
+    if (rows.length === 0 || rows[0].status !== 'aktif') {
+      return res.status(401).json({ success: false, message: 'User tidak ditemukan atau status nonaktif' });
+    }
+
+    req.user = rows[0];
+    next();
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Middleware: Khusus Bos / Admin
+const requireAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Akses ditolak! Menu ini hanya dapat diakses oleh Bos / Administrator.',
+    });
+  }
+  next();
+};
+
+// ====================================================================
+// ENDPOINTS: MANAJEMEN PEGAWAI / PENGGUNA (CRUD)
+// ====================================================================
+
+// GET /api/users - Daftar pegawai
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit, 10) || 10);
+    const offset = (page - 1) * limit;
+    const search = req.query.search ? req.query.search.trim() : '';
+    const role = req.query.role ? req.query.role.trim() : '';
+    const status = req.query.status ? req.query.status.trim() : '';
+
+    let whereClause = ' WHERE 1=1';
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (nama LIKE ? OR username LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`);
+    }
+    if (role) {
+      whereClause += ' AND role = ?';
+      params.push(role);
+    }
+    if (status) {
+      whereClause += ' AND status = ?';
+      params.push(status);
+    }
+
+    const [countResult] = await db.query(
+      `SELECT COUNT(*) as total FROM users ${whereClause}`,
+      params
+    );
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    const [rows] = await db.query(
+      `SELECT id, username, nama, role, status, created_at, updated_at 
+       FROM users ${whereClause} 
+       ORDER BY (role = 'admin') DESC, id ASC 
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    return res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    });
+  } catch (error) {
+    console.error('GET /api/users error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/users - Tambah pegawai baru
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { username, password, nama, role = 'kasir', status = 'aktif' } = req.body;
+
+    if (!username || !password || !nama) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username, password, dan nama pegawai wajib diisi!',
+      });
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    const [existing] = await db.query('SELECT id FROM users WHERE username = ?', [cleanUsername]);
+    if (existing.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Username '${cleanUsername}' sudah digunakan! Silakan gunakan username lain.`,
+      });
+    }
+
+    const [result] = await db.query(
+      'INSERT INTO users (username, password, nama, role, status) VALUES (?, ?, ?, ?, ?)',
+      [cleanUsername, password.trim(), nama.trim(), role, status]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: `Akun pegawai '${nama}' berhasil ditambahkan!`,
+      data: {
+        id: result.insertId,
+        username: cleanUsername,
+        nama: nama.trim(),
+        role,
+        status,
+      },
+    });
+  } catch (error) {
+    console.error('POST /api/users error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PUT /api/users/:id - Update pegawai
+app.put('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const { username, password, nama, role, status } = req.body;
+
+    const [current] = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    if (current.length === 0) {
+      return res.status(404).json({ success: false, message: 'Pegawai tidak ditemukan!' });
+    }
+
+    const user = current[0];
+
+    // Cek duplikasi username jika diubah
+    if (username && username.trim().toLowerCase() !== user.username) {
+      const cleanUsername = username.trim().toLowerCase();
+      const [existing] = await db.query('SELECT id FROM users WHERE username = ? AND id != ?', [cleanUsername, userId]);
+      if (existing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Username '${cleanUsername}' sudah digunakan oleh pengguna lain!`,
+        });
+      }
+    }
+
+    // Proteksi: jangan menonaktifkan atau menurunkan role admin terakhir
+    if (user.role === 'admin' && (role === 'kasir' || status === 'nonaktif')) {
+      const [adminCount] = await db.query(
+        "SELECT COUNT(*) as total FROM users WHERE role = 'admin' AND status = 'aktif' AND id != ?",
+        [userId]
+      );
+      if (adminCount[0].total === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Tidak dapat menonaktifkan atau mengubah role satu-satunya Bos/Admin aktif!',
+        });
+      }
+    }
+
+    const newUsername = username ? username.trim().toLowerCase() : user.username;
+    const newNama = nama ? nama.trim() : user.nama;
+    const newRole = role || user.role;
+    const newStatus = status || user.status;
+    const newPassword = password && password.trim() !== '' ? password.trim() : user.password;
+
+    await db.query(
+      'UPDATE users SET username = ?, password = ?, nama = ?, role = ?, status = ? WHERE id = ?',
+      [newUsername, newPassword, newNama, newRole, newStatus, userId]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Data pegawai berhasil diperbarui!',
+      data: {
+        id: userId,
+        username: newUsername,
+        nama: newNama,
+        role: newRole,
+        status: newStatus,
+      },
+    });
+  } catch (error) {
+    console.error('PUT /api/users/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/users/:id - Hapus pegawai
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+
+    // Proteksi: tidak bisa menghapus akun yang sedang login
+    if (req.user && req.user.id === userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Anda tidak dapat menghapus akun Anda sendiri yang sedang digunakan login!',
+      });
+    }
+
+    const [current] = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+    if (current.length === 0) {
+      return res.status(404).json({ success: false, message: 'Pegawai tidak ditemukan!' });
+    }
+
+    // Proteksi: tidak bisa menghapus admin terakhir
+    if (current[0].role === 'admin') {
+      const [adminCount] = await db.query(
+        "SELECT COUNT(*) as total FROM users WHERE role = 'admin' AND id != ?",
+        [userId]
+      );
+      if (adminCount[0].total === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Tidak dapat menghapus Bos/Admin terakhir dalam sistem!',
+        });
+      }
+    }
+
+    await db.query('DELETE FROM users WHERE id = ?', [userId]);
+
+    return res.json({
+      success: true,
+      message: `Akun pegawai '${current[0].nama}' berhasil dihapus!`,
+    });
+  } catch (error) {
+    console.error('DELETE /api/users/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ====================================================================
+// ENDPOINTS: RESET DATA SISTEM (KHUSUS BOS / ADMIN)
+// ====================================================================
+
+// POST /api/pengaturan/reset-transaksi - Reset riwayat transaksi operasional
+app.post('/api/pengaturan/reset-transaksi', requireAuth, requireAdmin, async (req, res) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+    await connection.query('DELETE FROM transaksi_jual_detail');
+    await connection.query('DELETE FROM transaksi_jual');
+    await connection.query('DELETE FROM transaksi_beli');
+    await connection.query('DELETE FROM pembayaran_hutang');
+    await connection.query('DELETE FROM hutang');
+    await connection.query('DELETE FROM titipan');
+    await connection.query('DELETE FROM kas');
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+
+    // Reset saldo hutang dan titipan mitra
+    await connection.query('UPDATE pelanggan SET saldo_hutang = 0, saldo_titipan = 0');
+
+    // Reset stok komoditas
+    await connection.query("UPDATE produk SET stok = 0 WHERE kode IN ('KMD-EMAS', 'KMD-SAWIT', 'KMD-KARET')");
+
+    // Inisialisasi kas modal awal baru
+    const today = new Date().toISOString().slice(0, 10);
+    await connection.query(
+      `INSERT INTO kas (kode_transaksi, tipe, kategori, jumlah, sumber, keterangan, tanggal)
+       VALUES (?, 'masuk', 'Modal Awal', 10000000.00, 'manual', 'Modal kas awal toko setelah reset transaksi', ?)`,
+      [`KAS-RESET-${Date.now().toString().slice(-4)}`, today]
+    );
+
+    await connection.commit();
+    return res.json({
+      success: true,
+      message: 'Riwayat transaksi berhasil di-reset bersih! Master data pelanggan, produk, dan akun pegawai tetap tersimpan aman.',
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('POST /api/pengaturan/reset-transaksi error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
+// POST /api/pengaturan/reset-total - Factory reset total dari database.sql
+app.post('/api/pengaturan/reset-total', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sqlPath = path.join(__dirname, 'sql', 'database.sql');
+    if (!fs.existsSync(sqlPath)) {
+      return res.status(404).json({ success: false, message: 'File database.sql tidak ditemukan!' });
+    }
+
+    const sqlContent = fs.readFileSync(sqlPath, 'utf8');
+    const conn = await db.getConnection();
+    try {
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+      await conn.query(sqlContent);
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+
+      return res.json({
+        success: true,
+        message: 'Database berhasil di-reset total ke pengaturan dan data awal (Factory Reset)!',
+      });
+    } finally {
+      conn.release();
+    }
+  } catch (error) {
+    console.error('POST /api/pengaturan/reset-total error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // ====================================================================
 // 1. ENDPOINTS: PENGATURAN TOKO & HARGA KOMODITAS
@@ -804,9 +1138,10 @@ app.post('/api/transaksi-beli', async (req, res) => {
         const cust = pelangganRows[0];
         const cutDebt = parseFloat(jumlah_potong_hutang) || (metode_bayar === 'potong_hutang' ? totalBayar : 0);
 
-        if (cutDebt > 0 && cust.saldo_hutang > 0) {
-          const actualCut = Math.min(cust.saldo_hutang, cutDebt);
-          const newDebt = Math.max(0, cust.saldo_hutang - actualCut);
+        const prevCustDebt = parseFloat(cust.saldo_hutang) || 0;
+        if (cutDebt > 0 && prevCustDebt > 0) {
+          const actualCut = Math.min(prevCustDebt, cutDebt);
+          const newDebt = Number(Math.max(0, prevCustDebt - actualCut).toFixed(2));
 
           // Update saldo hutang di pelanggan
           await connection.query('UPDATE pelanggan SET saldo_hutang = ? WHERE id = ?', [newDebt, pelanggan_id]);
@@ -823,7 +1158,7 @@ app.post('/api/transaksi-beli', async (req, res) => {
               pelanggan_id,
               pelanggan_id,
               actualCut,
-              cust.saldo_hutang,
+              prevCustDebt,
               newDebt,
               `Potong dari nota pembelian ${no_nota} (${jenis_komoditas.toUpperCase()})`,
               tanggal,
@@ -834,8 +1169,8 @@ app.post('/api/transaksi-beli', async (req, res) => {
         // Proses masuk tabungan titipan jika metode_bayar adalah masuk_titipan
         const addSavings = parseFloat(jumlah_masuk_titipan) || (metode_bayar === 'masuk_titipan' ? totalBayar : 0);
         if (addSavings > 0) {
-          const prevSaving = cust.saldo_titipan || 0;
-          const newSaving = prevSaving + addSavings;
+          const prevSaving = parseFloat(cust.saldo_titipan) || 0;
+          const newSaving = Number((prevSaving + addSavings).toFixed(2));
 
           await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newSaving, pelanggan_id]);
 
@@ -1167,8 +1502,9 @@ app.post('/api/transaksi-jual', async (req, res) => {
     if (metode_bayar === 'saldo_titipan' && pelanggan_id) {
       const [custRows] = await connection.query('SELECT saldo_titipan FROM pelanggan WHERE id = ?', [pelanggan_id]);
       if (custRows.length > 0) {
-        const prevBal = custRows[0].saldo_titipan || 0;
-        const newBal = Math.max(0, prevBal - parseFloat(total_akhir));
+        const prevBal = parseFloat(custRows[0].saldo_titipan) || 0;
+        const totalAkhir = parseFloat(total_akhir) || 0;
+        const newBal = Number(Math.max(0, prevBal - totalAkhir).toFixed(2));
         await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newBal, pelanggan_id]);
 
         const kode_titipan = `TTP-${Date.now().toString().slice(-4)}`;
@@ -1449,8 +1785,8 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
     }
 
     const cust = custRows[0];
-    const prevDebt = cust.saldo_hutang || 0;
-    const newDebt = Math.max(0, prevDebt - payAmount);
+    const prevDebt = parseFloat(cust.saldo_hutang) || 0;
+    const newDebt = Number(Math.max(0, prevDebt - payAmount).toFixed(2));
 
     // Update hutang pelanggan
     await connection.query('UPDATE pelanggan SET saldo_hutang = ? WHERE id = ?', [newDebt, targetPelangganId]);
@@ -1459,19 +1795,19 @@ app.post('/api/pembayaran-hutang', async (req, res) => {
     if (hutang_id) {
       const [hRows] = await connection.query('SELECT * FROM hutang WHERE id = ? FOR UPDATE', [hutang_id]);
       if (hRows.length > 0) {
-        const remaining = Math.max(0, hRows[0].sisa_hutang - payAmount);
+        const remaining = Math.max(0, (parseFloat(hRows[0].sisa_hutang) || 0) - payAmount);
         const newStatus = remaining <= 0 ? 'lunas' : 'sebagian';
         await connection.query(
           'UPDATE hutang SET sisa_hutang = ?, status = ? WHERE id = ?',
-          [remaining, newStatus, hutang_id]
+          [Number(remaining.toFixed(2)), newStatus, hutang_id]
         );
       }
     }
 
     // Jika bayar menggunakan saldo titipan
     if (metode_bayar === 'saldo_titipan') {
-      const prevSaving = cust.saldo_titipan || 0;
-      const newSaving = Math.max(0, prevSaving - payAmount);
+      const prevSaving = parseFloat(cust.saldo_titipan) || 0;
+      const newSaving = Number(Math.max(0, prevSaving - payAmount).toFixed(2));
       await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newSaving, targetPelangganId]);
 
       const kode_titipan = `TTP-${Date.now().toString().slice(-4)}`;
@@ -1582,7 +1918,7 @@ app.get('/api/titipan', async (req, res) => {
     const totalPages = Math.ceil(total / limit) || 1;
 
     const [rows] = await db.query(
-      `SELECT t.*, p.nama as nama_pelanggan, p.no_hp as no_hp_pelanggan 
+      `SELECT t.*, p.nama as nama_pelanggan, p.nama as pelanggan_nama, p.no_hp as no_hp_pelanggan 
        FROM titipan t 
        JOIN pelanggan p ON t.pelanggan_id = p.id 
        ${whereClause} 
@@ -1625,6 +1961,10 @@ app.post('/api/titipan', async (req, res) => {
     }
 
     const amount = parseFloat(jumlah);
+    if (isNaN(amount) || amount <= 0) {
+      await connection.rollback();
+      return res.status(400).json({ success: false, message: 'Nominal transaksi wajib lebih dari 0!' });
+    }
 
     const [custRows] = await connection.query(
       'SELECT * FROM pelanggan WHERE id = ? FOR UPDATE',
@@ -1636,18 +1976,23 @@ app.post('/api/titipan', async (req, res) => {
     }
 
     const cust = custRows[0];
-    const prevBalance = cust.saldo_titipan || 0;
+    const prevBalance = parseFloat(cust.saldo_titipan) || 0;
 
     if (jenis_transaksi === 'tarik' && prevBalance < amount) {
       await connection.rollback();
-      return res.status(400).json({ success: false, message: 'Saldo tabungan titipan tidak mencukupi untuk ditarik!' });
+      return res.status(400).json({ 
+        success: false, 
+        message: `Saldo tabungan titipan tidak mencukupi untuk ditarik! Sisa saldo saat ini: Rp ${prevBalance.toLocaleString('id-ID')}` 
+      });
     }
 
-    const newBalance = jenis_transaksi === 'setor' ? prevBalance + amount : prevBalance - amount;
+    const newBalance = jenis_transaksi === 'setor' 
+      ? Number((prevBalance + amount).toFixed(2)) 
+      : Number(Math.max(0, prevBalance - amount).toFixed(2));
 
     await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newBalance, pelanggan_id]);
 
-    const kode_titipan = `TTP-${Date.now().toString().slice(-4)}`;
+    const kode_titipan = req.body.kode_titipan || `TTP-${Date.now().toString().slice(-4)}`;
     const [result] = await connection.query(
       `INSERT INTO titipan (
         kode_titipan, pelanggan_id, jenis_transaksi, jumlah, 
@@ -1656,16 +2001,41 @@ app.post('/api/titipan', async (req, res) => {
       [kode_titipan, pelanggan_id, jenis_transaksi, amount, prevBalance, newBalance, keterangan || null, tanggal]
     );
 
+    // ====================================================================
+    // SINKRONISASI KAS DI LACI FISIK TOKO:
+    // - 'setor' : Uang tunai disetorkan nasabah masuk ke laci kasir (KAS MASUK)
+    // - 'tarik' : Kasir mengeluarkan uang tunai dari laci kasir (KAS KELUAR)
+    // ====================================================================
+    const dateCode = (tanggal || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+    const kasTipe = jenis_transaksi === 'setor' ? 'masuk' : 'keluar';
+    const kasKategori = jenis_transaksi === 'setor' ? 'Setor Tabungan' : 'Tarik Tabungan';
+    const prefix = kasTipe === 'masuk' ? 'KAS-IN' : 'KAS-OUT';
+
+    const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+    const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+    const kode_kas = `${prefix}-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+
+    const kasKet = keterangan 
+      ? `${kasKategori} - ${cust.nama}: ${keterangan}` 
+      : `${kasKategori} - ${cust.nama} (${kode_titipan})`;
+
+    await connection.query(
+      `INSERT INTO kas (
+        kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+      ) VALUES (?, ?, ?, ?, 'titipan', ?, ?, ?)`,
+      [kode_kas, kasTipe, kasKategori, amount, kode_titipan, kasKet, tanggal]
+    );
+
     await connection.commit();
 
     const [newTitipan] = await db.query(
-      'SELECT t.*, p.nama as nama_pelanggan FROM titipan t JOIN pelanggan p ON t.pelanggan_id = p.id WHERE t.id = ?',
+      'SELECT t.*, p.nama as nama_pelanggan, p.nama as pelanggan_nama, p.no_hp as no_hp_pelanggan FROM titipan t JOIN pelanggan p ON t.pelanggan_id = p.id WHERE t.id = ?',
       [result.insertId]
     );
 
     return res.status(201).json({
       success: true,
-      message: `Transaksi ${jenis_transaksi === 'setor' ? 'setoran' : 'penarikan'} tabungan berhasil dicatat`,
+      message: `Transaksi ${jenis_transaksi === 'setor' ? 'setoran' : 'penarikan'} tabungan berhasil dicatat dan disinkronkan ke buku kas`,
       data: newTitipan[0],
     });
   } catch (error) {
@@ -1674,6 +2044,20 @@ app.post('/api/titipan', async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   } finally {
     connection.release();
+  }
+});
+
+// Endpoint untuk re-sinkronisasi & perbaikan saldo tabungan nasabah serta buku kas
+app.post('/api/titipan/perbaiki-saldo', async (req, res) => {
+  try {
+    await repairTitipanAndKasSync();
+    return res.json({
+      success: true,
+      message: 'Seluruh saldo tabungan mitra dan mutasi kas di laci berhasil diperbaiki & disinkronkan!',
+    });
+  } catch (error) {
+    console.error('POST /api/titipan/perbaiki-saldo error:', error);
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -1950,31 +2334,39 @@ app.get('/api/laporan/periodik', async (req, res) => {
 
     let filterBeli = '';
     let filterJual = '';
+    let filterJualTj = '';
     const unionBeliParams = [dateFormat];
     const unionJualParams = [dateFormat];
     const beliParams = [];
     const jualParams = [];
+    const jualDetailParams = [];
 
     if (startDate) {
       filterBeli += ' AND tanggal >= ?';
       filterJual += ' AND tanggal >= ?';
+      filterJualTj += ' AND tj.tanggal >= ?';
       unionBeliParams.push(startDate);
       unionJualParams.push(startDate);
       beliParams.push(startDate);
       jualParams.push(startDate);
+      jualDetailParams.push(startDate);
     }
     if (endDate) {
       filterBeli += ' AND tanggal <= ?';
       filterJual += ' AND tanggal <= ?';
+      filterJualTj += ' AND tj.tanggal <= ?';
       unionBeliParams.push(endDate);
       unionJualParams.push(endDate);
       beliParams.push(endDate);
       jualParams.push(endDate);
+      jualDetailParams.push(endDate);
     }
     beliParams.unshift(dateFormat);
     beliParams.push(dateFormat);
     jualParams.unshift(dateFormat);
     jualParams.push(dateFormat);
+    jualDetailParams.unshift(dateFormat);
+    jualDetailParams.push(dateFormat);
 
     const query = `
       SELECT 
@@ -1983,7 +2375,11 @@ app.get('/api/laporan/periodik', async (req, res) => {
         COALESCE(jual.total_jual, 0) as jual,
         COALESCE(beli.emas_gr, 0) as emas_gr,
         COALESCE(beli.sawit_kg, 0) as sawit_kg,
-        COALESCE(beli.karet_kg, 0) as karet_kg
+        COALESCE(beli.karet_kg, 0) as karet_kg,
+        COALESCE(jual_detail.total_qty_jual, 0) as total_qty_jual,
+        COALESCE(jual_detail.jual_emas_gr, 0) as jual_emas_gr,
+        COALESCE(jual_detail.jual_sawit_kg, 0) as jual_sawit_kg,
+        COALESCE(jual_detail.jual_karet_kg, 0) as jual_karet_kg
       FROM (
         SELECT DISTINCT DATE_FORMAT(tanggal, ?) as label FROM transaksi_beli WHERE 1=1 ${filterBeli}
         UNION
@@ -2008,6 +2404,18 @@ app.get('/api/laporan/periodik', async (req, res) => {
         WHERE 1=1 ${filterJual}
         GROUP BY DATE_FORMAT(tanggal, ?)
       ) jual ON period_data.label = jual.label
+      LEFT JOIN (
+        SELECT 
+          DATE_FORMAT(tj.tanggal, ?) as label,
+          SUM(tjd.qty) as total_qty_jual,
+          SUM(CASE WHEN tjd.kode_produk = 'KMD-EMAS' OR LOWER(tjd.nama_produk) LIKE '%emas%' THEN tjd.qty ELSE 0 END) as jual_emas_gr,
+          SUM(CASE WHEN tjd.kode_produk = 'KMD-SAWIT' OR LOWER(tjd.nama_produk) LIKE '%sawit%' THEN tjd.qty ELSE 0 END) as jual_sawit_kg,
+          SUM(CASE WHEN tjd.kode_produk = 'KMD-KARET' OR LOWER(tjd.nama_produk) LIKE '%karet%' THEN tjd.qty ELSE 0 END) as jual_karet_kg
+        FROM transaksi_jual tj
+        JOIN transaksi_jual_detail tjd ON tj.id = tjd.transaksi_jual_id
+        WHERE 1=1 ${filterJualTj}
+        GROUP BY DATE_FORMAT(tj.tanggal, ?)
+      ) jual_detail ON period_data.label = jual_detail.label
       ORDER BY period_data.label DESC
       LIMIT 100
     `;
@@ -2017,6 +2425,7 @@ app.get('/api/laporan/periodik', async (req, res) => {
       ...unionJualParams,
       ...beliParams,
       ...jualParams,
+      ...jualDetailParams,
     ];
 
     const [rows] = await db.query(query, allParams);
@@ -2102,7 +2511,7 @@ async function ensureCommodityProducts() {
   }
 }
 
-// Inisialisasi tabel kas jika belum ada
+// Inisialisasi tabel kas jika belum ada & migrasi kolom sumber
 async function ensureKasTable() {
   try {
     await db.query(`
@@ -2112,7 +2521,7 @@ async function ensureKasTable() {
         tipe ENUM('masuk', 'keluar') NOT NULL,
         kategori VARCHAR(60) NOT NULL,
         jumlah DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-        sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang') DEFAULT 'manual',
+        sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan') DEFAULT 'manual',
         referensi_id VARCHAR(50) DEFAULT NULL,
         keterangan TEXT DEFAULT NULL,
         tanggal DATE NOT NULL,
@@ -2122,14 +2531,132 @@ async function ensureKasTable() {
         INDEX idx_kas_kode (kode_transaksi)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // Pastikan ENUM sumber memiliki 'titipan' jika tabel sudah ada sebelumnya
+    try {
+      await db.query(
+        "ALTER TABLE kas MODIFY COLUMN sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan') DEFAULT 'manual'"
+      );
+    } catch {
+      // Abaikan jika kolom sudah sesuai
+    }
   } catch (err) {
     // Silent catch if DB not ready
   }
 }
 
+// Fungsi perbaikan saldo tabungan titipan dan sinkronisasi ke buku kas toko
+async function repairTitipanAndKasSync() {
+  let connection;
+  try {
+    connection = await db.getConnection();
+
+    // 1. Dapatkan semua nasabah yang memiliki riwayat titipan
+    const [custRows] = await connection.query(`
+      SELECT DISTINCT pelanggan_id FROM titipan ORDER BY pelanggan_id ASC
+    `);
+
+    for (const { pelanggan_id } of custRows) {
+      // Ambil seluruh mutasi tabungan nasabah ini secara kronologis (id ASC)
+      const [transRows] = await connection.query(
+        'SELECT * FROM titipan WHERE pelanggan_id = ? ORDER BY id ASC',
+        [pelanggan_id]
+      );
+
+      if (transRows.length === 0) continue;
+
+      let runningBalance = parseFloat(transRows[0].saldo_sebelum) || 0;
+
+      for (const t of transRows) {
+        const amt = parseFloat(t.jumlah) || 0;
+        const before = runningBalance;
+        let after = before;
+
+        if (t.jenis_transaksi === 'setor' || t.jenis_transaksi === 'masuk_dari_jual_komoditas') {
+          after = Number((before + amt).toFixed(2));
+        } else if (
+          t.jenis_transaksi === 'tarik' || 
+          t.jenis_transaksi === 'potong_bayar_belanja' || 
+          t.jenis_transaksi === 'potong_bayar_hutang'
+        ) {
+          after = Number(Math.max(0, before - amt).toFixed(2));
+        }
+
+        const currBefore = parseFloat(t.saldo_sebelum) || 0;
+        const currAfter = parseFloat(t.saldo_sesudah) || 0;
+
+        if (currBefore !== before || currAfter !== after) {
+          await connection.query(
+            'UPDATE titipan SET saldo_sebelum = ?, saldo_sesudah = ? WHERE id = ?',
+            [before, after, t.id]
+          );
+        }
+
+        runningBalance = after;
+      }
+
+      // Update saldo akhir di master pelanggan
+      await connection.query(
+        'UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?',
+        [runningBalance, pelanggan_id]
+      );
+    }
+
+    // 2. Sinkronkan riwayat setor & tarik tabungan ke dalam buku kas jika belum tercatat
+    const [allTitipan] = await connection.query(`
+      SELECT t.*, p.nama as nama_pelanggan 
+      FROM titipan t 
+      JOIN pelanggan p ON t.pelanggan_id = p.id 
+      WHERE t.jenis_transaksi IN ('setor', 'tarik')
+      ORDER BY t.id ASC
+    `);
+
+    for (const t of allTitipan) {
+      const [existKas] = await connection.query(
+        'SELECT id FROM kas WHERE referensi_id = ? OR keterangan LIKE ?',
+        [t.kode_titipan, `%${t.kode_titipan}%`]
+      );
+
+      if (existKas.length === 0) {
+        const kasTipe = t.jenis_transaksi === 'setor' ? 'masuk' : 'keluar';
+        const kasKategori = t.jenis_transaksi === 'setor' ? 'Setor Tabungan' : 'Tarik Tabungan';
+        const prefix = kasTipe === 'masuk' ? 'KAS-IN' : 'KAS-OUT';
+        const rawDate = t.tanggal ? new Date(t.tanggal).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        const dateCode = rawDate.replace(/-/g, '');
+        const kode_kas = `${prefix}-SYNC-${dateCode}-${t.id}`;
+
+        const kasKet = t.keterangan 
+          ? `${kasKategori} - ${t.nama_pelanggan}: ${t.keterangan}` 
+          : `${kasKategori} - ${t.nama_pelanggan} (${t.kode_titipan})`;
+
+        await connection.query(
+          `INSERT INTO kas (
+            kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+          ) VALUES (?, ?, ?, ?, 'titipan', ?, ?, ?)`,
+          [
+            kode_kas,
+            kasTipe,
+            kasKategori,
+            parseFloat(t.jumlah) || 0,
+            t.kode_titipan,
+            kasKet,
+            rawDate
+          ]
+        );
+      }
+    }
+    console.log('[Auto-Sync] Saldo tabungan mitra dan mutasi kas di laci berhasil diperiksa & disinkronkan.');
+  } catch (err) {
+    console.error('[Auto-Sync] Gagal menjalankan repairTitipanAndKasSync:', err.message);
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 // Start Server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Berkah POS Backend berjalan di port http://localhost:${PORT}`);
-  ensureKasTable();
-  ensureCommodityProducts();
+  await ensureKasTable();
+  await ensureCommodityProducts();
+  await repairTitipanAndKasSync();
 });

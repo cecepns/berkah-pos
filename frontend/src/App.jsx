@@ -15,6 +15,7 @@ import Titipan from '@/pages/Titipan';
 import Kas from '@/pages/Kas';
 import Laporan from '@/pages/Laporan';
 import Pengaturan from '@/pages/Pengaturan';
+import Pegawai from '@/pages/Pegawai';
 
 export default function App() {
   return (
@@ -67,9 +68,38 @@ export default function App() {
             <Route path="pelanggan" element={<Pelanggan />} />
             <Route path="hutang" element={<Hutang />} />
             <Route path="titipan" element={<Titipan />} />
-            <Route path="kas" element={<Kas />} />
-            <Route path="laporan" element={<Laporan />} />
-            <Route path="pengaturan" element={<Pengaturan />} />
+            <Route
+              path="kas"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Kas />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="laporan"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Laporan />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="pegawai"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Pegawai />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="pengaturan"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <Pengaturan />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

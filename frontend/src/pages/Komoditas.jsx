@@ -50,7 +50,7 @@ const customPelangganSelectStyles = {
   menuList: (base) => ({
     ...base,
     padding: '4px',
-    maxHeight: '220px',
+    maxHeight: '180px',
   }),
   menuPortal: (base) => ({
     ...base,
@@ -542,28 +542,28 @@ export default function Komoditas() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top Title & Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Scale className="w-6 h-6 text-amber-500" />
-            Pembelian Komoditas (Emas, Sawit, Karet)
+          <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 sm:gap-2.5">
+            <Scale className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500 shrink-0" />
+            <span>Pembelian Komoditas</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
             Penimbangan hasil bumi dan emas presisi, hitung potongan otomatis, potong kasbon, dan cetak nota.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {/* Sisa Uang Kas Belanja Card */}
-          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200/80 shadow-xs">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600">
-              <Wallet className="w-4 h-4" />
+          <div className="flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-50 border border-emerald-200/80 shadow-xs">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 shrink-0">
+              <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
             <div>
-              <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-700">
-                Uang Kas Belanja
+              <div className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider text-emerald-700">
+                Kas Belanja
               </div>
               <div className="text-xs sm:text-sm font-black text-emerald-950 font-mono-num">
                 {loadingKas ? 'Memuat...' : formatRupiah(saldoKas)}
@@ -574,7 +574,7 @@ export default function Komoditas() {
           <button
             type="button"
             onClick={() => setIsKasModalOpen(true)}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
           >
             <Banknote className="w-4 h-4 text-emerald-600" />
             <span>Siapkan Kas</span>
@@ -583,18 +583,27 @@ export default function Komoditas() {
           <button
             type="button"
             onClick={openCreateModal}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
+            className="flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs sm:text-sm shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Timbang & Beli Baru</span>
+            <span>Timbang & Beli</span>
           </button>
         </div>
       </div>
 
       {/* Filters & Search Row */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-2.5 sm:gap-4">
+        {/* Realtime Debounced Search on top on mobile */}
+        <div className="w-full md:w-72 order-1 md:order-2">
+          <DebouncedSearch
+            value={search}
+            onChange={(val) => setSearch(val)}
+            placeholder="Cari no nota / mitra..."
+          />
+        </div>
+
         {/* Commodity Tabs */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 w-full md:w-auto overflow-x-auto">
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 w-full md:w-auto overflow-x-auto no-scrollbar order-2 md:order-1">
           {[
             { id: '', label: 'Semua Komoditas' },
             { id: 'sawit', label: '🌾 Sawit (kg)' },
@@ -615,20 +624,93 @@ export default function Komoditas() {
             </button>
           ))}
         </div>
-
-        {/* Realtime Debounced Search */}
-        <div className="w-full md:w-72">
-          <DebouncedSearch
-            value={search}
-            onChange={(val) => setSearch(val)}
-            placeholder="Cari no nota / mitra..."
-          />
-        </div>
       </div>
 
-      {/* Transactions Table */}
-      <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+      {/* Transactions Table & Mobile Cards */}
+      <div className="rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
+        {/* Mobile Card List (sm:hidden) */}
+        <div className="block sm:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="p-4"><TableSkeleton rows={4} cols={1} /></div>
+          ) : list.length === 0 ? (
+            <EmptyState
+              title="Belum Ada Transaksi Pembelian"
+              description="Belum ada data pembelian komoditas yang dicatat. Klik tombol di bawah untuk mulai menimbang."
+              actionLabel="Timbang & Beli Baru"
+              onAction={openCreateModal}
+            />
+          ) : (
+            list.map((item) => {
+              const isEmas = item.jenis_komoditas === 'emas';
+              const isSawit = item.jenis_komoditas === 'sawit';
+
+              return (
+                <div key={item.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono-num font-bold text-xs text-slate-800">{item.no_nota}</span>
+                      <span className="text-[10px] text-slate-400">• {formatDate(item.tanggal)}</span>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase shrink-0 ${
+                        isEmas
+                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                          : isSawit
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          : 'bg-cyan-50 text-cyan-800 border border-cyan-200'
+                      }`}
+                    >
+                      {item.jenis_komoditas}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-slate-900 text-sm">{item.nama_pelanggan}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {formatWeight(item.berat_bersih, item.satuan)} @ {formatRupiah(item.harga_satuan)}
+                        {item.kadar && ` (${item.kadar})`}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[10px] text-slate-400">Total Bayar</div>
+                      <div className="text-sm font-black font-mono-num text-amber-600">
+                        {formatRupiah(item.total_bayar)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-xs">
+                    <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                      {item.metode_bayar?.replace('_', ' ')}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setReceiptData(item)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Nota</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteId(item.id)}
+                        className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200"
+                        title="Hapus Transaksi"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table (hidden sm:block) */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold border-b border-slate-100">
               <tr>
@@ -790,7 +872,7 @@ export default function Komoditas() {
                 </button>
               ))}
             </div>
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50/80 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-medium">
+            <div className="mt-1.5 hidden sm:flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50/80 border border-emerald-200/70 px-2.5 py-1.5 rounded-xl font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
               <span>
                 Hasil timbang beli ini otomatis menambah stok produk{' '}
@@ -868,29 +950,29 @@ export default function Komoditas() {
                   const hasTitipan = Number(c.saldo_titipan) > 0;
 
                   return (
-                    <div className="flex items-center justify-between py-0.5 gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-800 text-xs truncate">
-                          {c.kode} - {c.nama}
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {c.kategori} {c.no_hp ? `• ${c.no_hp}` : ''}
-                        </div>
+                    <div className="py-1">
+                      <div className="font-semibold text-slate-900 text-xs break-words">
+                        <span className="text-slate-500 font-mono text-[11px]">{c.kode}</span> - {c.nama}
                       </div>
-                      {(hasHutang || hasTitipan) && (
-                        <div className="flex items-center gap-1 shrink-0 text-[10px]">
-                          {hasHutang && (
-                            <span className="bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
-                              Bon: {formatRupiah(c.saldo_hutang)}
-                            </span>
-                          )}
-                          {hasTitipan && (
-                            <span className="bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
-                              Tabungan: {formatRupiah(c.saldo_titipan)}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <div className="flex items-center justify-between gap-2 mt-0.5 text-[10px]">
+                        <span className="text-slate-400 truncate">
+                          {c.kategori || 'Mitra'}{c.no_hp ? ` • ${c.no_hp}` : ''}
+                        </span>
+                        {(hasHutang || hasTitipan) && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            {hasHutang && (
+                              <span className="bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                                Bon: {formatRupiah(c.saldo_hutang)}
+                              </span>
+                            )}
+                            {hasTitipan && (
+                              <span className="bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                                Tab: {formatRupiah(c.saldo_titipan)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 }}
@@ -955,9 +1037,16 @@ export default function Komoditas() {
 
               {/* Potongan Persen / Tara */}
               <div>
-                <label className="block text-xs text-slate-600 mb-1">
-                  Potongan / Sortasi (%)
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-slate-600">
+                    Potongan / Sortasi (%)
+                  </label>
+                  {pct > 0 && grossTotal > 0 && (
+                    <span className="text-[10.5px] font-bold text-amber-700 font-mono-num">
+                      Lahan: Rp {formatNumber(Math.round((grossTotal * pct) / 100), 0)}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   step="0.1"

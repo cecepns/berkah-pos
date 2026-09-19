@@ -7,6 +7,7 @@ import {
   Printer,
   History,
 } from 'lucide-react';
+import AsyncSelect from 'react-select/async';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
 import { formatRupiah, formatDate } from '@/utils/formatters';
@@ -124,7 +125,40 @@ export default function Hutang() {
     }
   }, [activeTab, search, statusFilter, historySearch, pagination.limit, historyPagination.limit]);
 
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+
+  let customerSearchTimeout = null;
+  const loadCustomerOptions = (inputValue) => {
+    return new Promise((resolve) => {
+      if (customerSearchTimeout) clearTimeout(customerSearchTimeout);
+      const delay = !inputValue ? 0 : 300;
+      customerSearchTimeout = setTimeout(async () => {
+        try {
+          const res = await request.get(API_ENDPOINTS.PELANGGAN.LIST, {
+            search: inputValue || '',
+            limit: 30,
+          });
+          if (res?.success && Array.isArray(res.data)) {
+            const apiOptions = res.data.map((c) => ({
+              value: c.id,
+              label: `${c.kode} - ${c.nama}`,
+              subLabel: `${c.kategori}${c.no_hp ? ' • ' + c.no_hp : ''}`,
+              data: c,
+            }));
+            resolve(apiOptions);
+          } else {
+            resolve([]);
+          }
+        } catch (err) {
+          console.error('Gagal memuat opsi pelanggan:', err);
+          resolve([]);
+        }
+      }, delay);
+    });
+  };
+
   const openCreateModal = () => {
+    setSelectedCustomer(null);
     setCreateForm({
       pelanggan_id: '',
       tipe: 'kasbon_tunai',
@@ -233,15 +267,15 @@ export default function Hutang() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <CreditCard className="w-6 h-6 text-rose-600" />
-            Buku Kasbon & Hutang Pelanggan
+          <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-rose-600 shrink-0" />
+            <span>Buku Kasbon & Hutang</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
             Pencatatan pinjaman operasional petani, bon toko, pelunasan bertahap, dan potong hasil panen.
           </p>
         </div>
@@ -249,47 +283,58 @@ export default function Hutang() {
         <button
           type="button"
           onClick={openCreateModal}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Catat Kasbon Baru</span>
+          <span className="hidden xs:inline sm:inline">Catat Kasbon Baru</span>
+          <span className="xs:hidden sm:hidden">Kasbon</span>
         </button>
       </div>
 
       {/* Main Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 border-b border-slate-200 pb-2">
         <button
           type="button"
           onClick={() => setActiveTab('hutang')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all ${
             activeTab === 'hutang'
               ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <CreditCard className="w-4 h-4" />
-          <span>Buku Kasbon / Piutang Berjalan</span>
+          <CreditCard className="w-4 h-4 shrink-0" />
+          <span className="sm:hidden">Buku Kasbon</span>
+          <span className="hidden sm:inline">Buku Kasbon / Piutang Berjalan</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('riwayat')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all ${
             activeTab === 'riwayat'
               ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <History className="w-4 h-4" />
-          <span>Riwayat Pembayaran Kasbon</span>
+          <History className="w-4 h-4 shrink-0" />
+          <span className="sm:hidden">Riwayat Bayar</span>
+          <span className="hidden sm:inline">Riwayat Pembayaran Kasbon</span>
         </button>
       </div>
 
       {/* Content for Tab: Hutang */}
       {activeTab === 'hutang' && (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {/* Status Filter & Search */}
-          <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
+          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+            <div className="w-full sm:w-72 order-1 sm:order-2">
+              <DebouncedSearch
+                value={search}
+                onChange={(val) => setSearch(val)}
+                placeholder="Cari nama mitra / kode kasbon..."
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto order-2 sm:order-1 pb-1 sm:pb-0">
               {[
                 { id: '', label: 'Semua Status' },
                 { id: 'belum_lunas', label: 'Belum Lunas' },
@@ -310,19 +355,88 @@ export default function Hutang() {
                 </button>
               ))}
             </div>
-
-            <div className="w-full md:w-72">
-              <DebouncedSearch
-                value={search}
-                onChange={(val) => setSearch(val)}
-                placeholder="Cari nama mitra / kode kasbon..."
-              />
-            </div>
           </div>
 
-          {/* Table Hutang */}
-          <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          {/* Table / Cards Hutang */}
+          <div className="rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
+            {/* Mobile Card List (sm:hidden) */}
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {loading ? (
+                <div className="p-4">
+                  <TableSkeleton rows={4} cols={1} />
+                </div>
+              ) : list.length === 0 ? (
+                <EmptyState
+                  title="Tidak Ada Data Kasbon"
+                  description="Semua kasbon telah lunas atau belum ada catatan baru."
+                  actionLabel="Catat Kasbon Baru"
+                  onAction={openCreateModal}
+                />
+              ) : (
+                list.map((item) => {
+                  const isLunas = item.status === 'lunas';
+                  const isSebagian = item.status === 'sebagian';
+
+                  return (
+                    <div key={item.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/60 transition-colors">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono-num font-bold text-xs text-slate-800">{item.kode_hutang}</span>
+                          <span className="text-[10px] text-slate-400">• {formatDate(item.tanggal)}</span>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                            isLunas
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : isSebagian
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {isLunas ? 'Lunas' : isSebagian ? 'Sebagian' : 'Belum Lunas'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-900 text-sm">{item.pelanggan_nama}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            <span className="capitalize">{item.tipe === 'kasbon_tunai' ? 'Kasbon Tunai' : 'Bon Belanja'}</span>
+                            {item.keterangan && ` • ${item.keterangan}`}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-[10px] text-slate-400">Sisa Hutang</div>
+                          <div className="text-sm font-black font-mono-num text-rose-600">
+                            {formatRupiah(item.sisa_hutang)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-xs">
+                        <span className="text-slate-400 text-[11px]">
+                          Total: <span className="font-mono-num text-slate-600">{formatRupiah(item.jumlah_hutang)}</span>
+                        </span>
+                        {!isLunas ? (
+                          <button
+                            type="button"
+                            onClick={() => openPayModal(item)}
+                            className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-all"
+                          >
+                            Bayar Kasbon
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-semibold">Tuntas</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Table (hidden sm:block) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold border-b border-slate-100">
                   <tr>
@@ -440,10 +554,10 @@ export default function Hutang() {
 
       {/* Content for Tab: Riwayat Pembayaran */}
       {activeTab === 'riwayat' && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex justify-between items-center">
-            <h3 className="text-sm font-bold text-slate-900">Log Transaksi Pembayaran Kasbon</h3>
-            <div className="w-72">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+            <h3 className="text-xs sm:text-sm font-bold text-slate-900">Log Transaksi Pembayaran Kasbon</h3>
+            <div className="w-full sm:w-72">
               <DebouncedSearch
                 value={historySearch}
                 onChange={(val) => setHistorySearch(val)}
@@ -452,8 +566,71 @@ export default function Hutang() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
+            {/* Mobile Cards (sm:hidden) */}
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {loadingHistory ? (
+                <div className="p-4"><TableSkeleton rows={4} cols={1} /></div>
+              ) : historyList.length === 0 ? (
+                <EmptyState
+                  title="Belum Ada Riwayat Bayar"
+                  description="Belum ada catatan pembayaran kasbon."
+                />
+              ) : (
+                historyList.map((item) => (
+                  <div key={item.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/60 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono-num font-bold text-xs text-slate-800">{item.kode_bayar}</span>
+                        <span className="text-[10px] text-slate-400">• {formatDate(item.tanggal)}</span>
+                      </div>
+                      <span className="uppercase text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
+                        {item.metode_bayar?.replace('_', ' ')}
+                      </span>
+                    </div>
+
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-slate-900 text-sm">{item.pelanggan_nama}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          Sisa: {formatRupiah(item.sisa_sebelum)} &rarr; {formatRupiah(item.sisa_sesudah)}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] text-slate-400">Dibayar</div>
+                        <div className="text-sm font-black font-mono-num text-emerald-700">
+                          {formatRupiah(item.jumlah_bayar)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setReceiptData({
+                            kode_bayar: item.kode_bayar,
+                            nama_pelanggan: item.pelanggan_nama,
+                            sisa_sebelum: item.sisa_sebelum,
+                            jumlah_bayar: item.jumlah_bayar,
+                            sisa_sesudah: item.sisa_sesudah,
+                            metode_bayar: item.metode_bayar,
+                            tanggal: item.tanggal,
+                          })
+                        }
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Cetak Struk</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop Table (hidden sm:block) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold border-b border-slate-100">
                   <tr>
@@ -562,20 +739,94 @@ export default function Hutang() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Pilih Mitra Petani / Pelanggan <span className="text-rose-500">*</span>
             </label>
-            <select
-              required
-              value={createForm.pelanggan_id}
-              onChange={(e) => setCreateForm({ ...createForm, pelanggan_id: e.target.value })}
-              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-rose-500"
-            >
-              <option value="">-- Pilih Mitra --</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.kode} - {c.nama} ({c.kategori})
-                </option>
-              ))}
-            </select>
+            <AsyncSelect
+              cacheOptions
+              defaultOptions
+              loadOptions={loadCustomerOptions}
+              value={
+                selectedCustomer
+                  ? {
+                      value: selectedCustomer.id,
+                      label: `${selectedCustomer.kode} - ${selectedCustomer.nama}`,
+                      data: selectedCustomer,
+                    }
+                  : null
+              }
+              onChange={(opt) => {
+                setSelectedCustomer(opt?.data || null);
+                setCreateForm({
+                  ...createForm,
+                  pelanggan_id: opt?.data?.id || '',
+                });
+              }}
+              placeholder="🔍 Ketik nama / kode mitra untuk mencari..."
+              noOptionsMessage={({ inputValue }) =>
+                inputValue ? 'Mitra tidak ditemukan' : 'Ketik nama mitra...'
+              }
+              loadingMessage={() => 'Mencari mitra di server...'}
+              menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+              styles={{
+                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                menuList: (base) => ({ ...base, maxHeight: '180px' }),
+              }}
+              formatOptionLabel={(option) => {
+                const c = option.data;
+                if (!c) return <span>{option.label}</span>;
+                const hasHutang = Number(c.saldo_hutang) > 0;
+                const hasTitipan = Number(c.saldo_titipan) > 0;
+                return (
+                  <div className="py-1">
+                    <div className="font-semibold text-slate-900 text-xs break-words">
+                      <span className="text-slate-500 font-mono text-[11px]">{c.kode}</span> - {c.nama}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5 text-[10px]">
+                      <span className="text-slate-400 truncate">
+                        {c.kategori || 'Mitra'}{c.no_hp ? ` • ${c.no_hp}` : ''}
+                      </span>
+                      {(hasHutang || hasTitipan) && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {hasHutang && (
+                            <span className="bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                              Bon: {formatRupiah(c.saldo_hutang)}
+                            </span>
+                          )}
+                          {hasTitipan && (
+                            <span className="bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-mono font-medium whitespace-nowrap">
+                              Tab: {formatRupiah(c.saldo_titipan)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }}
+              classNames={{
+                control: (state) =>
+                  `!min-h-[40px] !text-xs !rounded-xl !bg-white !border ${
+                    state.isFocused ? '!border-rose-500 !ring-1 !ring-rose-500' : '!border-slate-300'
+                  }`,
+                menu: () => '!z-50 !rounded-xl !shadow-xl !border !border-slate-200 !text-xs',
+              }}
+            />
           </div>
+
+          {selectedCustomer && (
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="text-slate-500">Sisa Kasbon Saat Ini: </span>
+                <span className="font-bold text-rose-600 font-mono-num">
+                  {formatRupiah(selectedCustomer.saldo_hutang)}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-500">Saldo Tabungan: </span>
+                <span className="font-bold text-blue-600 font-mono-num">
+                  {formatRupiah(selectedCustomer.saldo_titipan)}
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

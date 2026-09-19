@@ -149,15 +149,15 @@ export default function Pelanggan() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Users className="w-6 h-6 text-emerald-600" />
-            Pelanggan & Mitra Petani
+          <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0" />
+            <span>Pelanggan & Mitra Petani</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
             Manajemen mitra petani sawit, karet, penjual perhiasan emas, dan pelanggan kasir toko.
           </p>
         </div>
@@ -165,22 +165,31 @@ export default function Pelanggan() {
         <button
           type="button"
           onClick={openCreateModal}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
+          className="flex items-center justify-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          <span>Tambah Mitra Baru</span>
+          <span className="hidden xs:inline sm:inline">Tambah Mitra Baru</span>
+          <span className="xs:hidden sm:hidden">Mitra Baru</span>
         </button>
       </div>
 
       {/* Filter Category & Realtime Search */}
-      <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
+      <div className="p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col md:flex-row items-center justify-between gap-2.5 sm:gap-4">
+        <div className="w-full md:w-72 order-1 md:order-2">
+          <DebouncedSearch
+            value={search}
+            onChange={(val) => setSearch(val)}
+            placeholder="Cari nama / kode / no hp..."
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full md:w-auto order-2 md:order-1 pb-1 md:pb-0">
           <button
             type="button"
             onClick={() => setKategori('')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
               !kategori
-                ? 'bg-emerald-600 text-white'
+                ? 'bg-emerald-600 text-white shadow-sm'
                 : 'bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -193,7 +202,7 @@ export default function Pelanggan() {
               onClick={() => setKategori(cat)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                 kategori === cat
-                  ? 'bg-emerald-600 text-white'
+                  ? 'bg-emerald-600 text-white shadow-sm'
                   : 'bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -201,19 +210,101 @@ export default function Pelanggan() {
             </button>
           ))}
         </div>
-
-        <div className="w-full md:w-72">
-          <DebouncedSearch
-            value={search}
-            onChange={(val) => setSearch(val)}
-            placeholder="Cari nama / kode / no hp..."
-          />
-        </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
+      {/* Table & Mobile Cards */}
+      <div className="rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-sm">
+        {/* Mobile Card List (sm:hidden) */}
+        <div className="block sm:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="p-4"><TableSkeleton rows={4} cols={1} /></div>
+          ) : list.length === 0 ? (
+            <EmptyState
+              title="Belum Ada Mitra Terdaftar"
+              description="Tambahkan mitra petani atau pelanggan untuk mulai mencatat transaksi dan hutang."
+              actionLabel="Tambah Mitra Sekarang"
+              onAction={openCreateModal}
+            />
+          ) : (
+            list.map((item) => {
+              const hasDebt = Number(item.saldo_hutang) > 0;
+              const hasDeposit = Number(item.saldo_titipan) > 0;
+
+              return (
+                <div key={item.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-mono-num font-bold text-xs text-slate-800">{item.kode}</span>
+                      <span className="font-bold text-slate-900 text-sm truncate">{item.nama}</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                      {item.kategori}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="text-slate-500 flex items-center gap-1 min-w-0">
+                      <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{item.no_hp || '-'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {hasDebt && (
+                        <span className="bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded text-[10px] font-mono-num font-bold">
+                          Bon: {formatRupiah(item.saldo_hutang)}
+                        </span>
+                      )}
+                      {hasDeposit && (
+                        <span className="bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] font-mono-num font-bold">
+                          Tab: {formatRupiah(item.saldo_titipan)}
+                        </span>
+                      )}
+                      {!hasDebt && !hasDeposit && (
+                        <span className="text-[10px] text-slate-400">Saldo Nihil</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {item.alamat && (
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1 truncate">
+                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{item.alamat}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setDetailCustomer(item)}
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors"
+                      title="Detail Mitra"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(item)}
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors"
+                      title="Edit Mitra"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteId(item.id)}
+                      className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors"
+                      title="Hapus Mitra"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table (hidden sm:block) */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-semibold border-b border-slate-100">
               <tr>

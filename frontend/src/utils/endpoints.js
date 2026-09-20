@@ -36,7 +36,9 @@ export const API_ENDPOINTS = {
 
   TRANSAKSI_BELI: {
     LIST: '/transaksi-beli',
+    DETAIL: (id) => `/transaksi-beli/${id}`,
     CREATE: '/transaksi-beli',
+    UPDATE: (id) => `/transaksi-beli/${id}`,
     DELETE: (id) => `/transaksi-beli/${id}`,
   },
 

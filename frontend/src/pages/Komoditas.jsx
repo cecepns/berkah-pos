@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Wallet,
   Banknote,
+  Edit2,
 } from 'lucide-react';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
@@ -117,20 +118,22 @@ export default function Komoditas() {
   // Pelanggan Mitra list for select
   const [pelangganList, setPelangganList] = useState([]);
 
-  // Create Modal State
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // Create / Edit Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   // Form Fields
   const [form, setForm] = useState({
     pelanggan_id: '',
     nama_pelanggan: '',
-    jenis_komoditas: 'sawit',
+    jenis_komoditas: 'emas',
     berat_kotor: '',
     potongan_persen: '0',
     potongan_nilai: '0',
-    satuan: 'kg',
-    kadar: 'TBS Matang',
+    satuan: 'gram',
+    kadar: '22K (70%)',
     harga_satuan: '',
     biaya_lain: '0',
     metode_bayar: 'tunai',
@@ -292,18 +295,20 @@ export default function Komoditas() {
 
   // Open Create Modal
   const openCreateModal = () => {
-    let defPrice = storeInfo?.harga_sawit_kg || 2650;
+    setEditingId(null);
+    setEditingItem(null);
+    let defPrice = storeInfo?.harga_emas_24k || 1350000;
     setForm({
       pelanggan_id: '',
       nama_pelanggan: '',
-      jenis_komoditas: 'sawit',
+      jenis_komoditas: 'emas',
       berat_kotor: '',
       potongan_persen: '0',
       potongan_nilai: '0',
       pembagi_1: '',
       pembagi_2: '',
-      satuan: 'kg',
-      kadar: 'TBS Matang',
+      satuan: 'gram',
+      kadar: '22K (70%)',
       harga_satuan: String(defPrice),
       biaya_lain: '0',
       metode_bayar: 'tunai',
@@ -313,7 +318,62 @@ export default function Komoditas() {
       tanggal: new Date().toISOString().split('T')[0],
     });
     setSelectedCustomer(null);
-    setIsCreateOpen(true);
+    setIsModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const openEditModal = (item) => {
+    setEditingId(item.id);
+    setEditingItem(item);
+
+    // Ekstrak info pembagi jika tersimpan di dalam catatan (contoh: "Dibagi 2, Dibagi 6")
+    let p1 = '';
+    let p2 = '';
+    let cleanCatatan = item.catatan || '';
+    const matchBagi = cleanCatatan.match(/\(?Dibagi\s+(\d+)(?:,\s*Dibagi\s+(\d+))?\)?/i);
+    if (matchBagi) {
+      p1 = matchBagi[1] || '';
+      p2 = matchBagi[2] || '';
+      cleanCatatan = cleanCatatan.replace(/\s*\(?Dibagi\s+\d+(?:,\s*Dibagi\s+\d+)?\)?\s*/i, ' ').trim();
+    }
+
+    if (item.pelanggan_id) {
+      const foundCust = pelangganList.find((p) => p.id === item.pelanggan_id);
+      if (foundCust) {
+        setSelectedCustomer(foundCust);
+      } else {
+        request.get(API_ENDPOINTS.PELANGGAN.DETAIL(item.pelanggan_id))
+          .then((res) => {
+            if (res?.success && res.data) {
+              setSelectedCustomer(res.data);
+            }
+          })
+          .catch((e) => console.error('Gagal mengambil detail pelanggan:', e));
+      }
+    } else {
+      setSelectedCustomer(null);
+    }
+
+    setForm({
+      pelanggan_id: item.pelanggan_id || '',
+      nama_pelanggan: item.nama_pelanggan || '',
+      jenis_komoditas: item.jenis_komoditas || 'sawit',
+      berat_kotor: String(item.berat_kotor || ''),
+      potongan_persen: String(item.potongan_persen ?? '0'),
+      potongan_nilai: String(item.potongan_nilai ?? '0'),
+      pembagi_1: p1,
+      pembagi_2: p2,
+      satuan: item.satuan || (item.jenis_komoditas === 'emas' ? 'gram' : 'kg'),
+      kadar: item.kadar || '',
+      harga_satuan: String(item.harga_satuan || ''),
+      biaya_lain: String(item.biaya_lain ?? '0'),
+      metode_bayar: item.metode_bayar || 'tunai',
+      jumlah_potong_hutang: String(item.jumlah_potong_hutang ?? '0'),
+      jumlah_masuk_titipan: String(item.jumlah_masuk_titipan ?? '0'),
+      catatan: cleanCatatan,
+      tanggal: item.tanggal ? String(item.tanggal).slice(0, 10) : new Date().toISOString().split('T')[0],
+    });
+    setIsModalOpen(true);
   };
 
   const searchPelangganTimerRef = useRef(null);
@@ -434,6 +494,15 @@ export default function Komoditas() {
   // Total Bayar yang menjadi pengurangan kas toko & tercatat di laporan pengeluaran:
   const totalBayar = totalBeliToko;
 
+  // Nilai tunai keluar lama jika dalam mode edit (agar tidak keliru memblokir uang kas)
+  const oldTunaiKeluar = editingItem && (editingItem.metode_bayar === 'tunai' || editingItem.metode_bayar === 'transfer')
+    ? Math.max(0, Number(editingItem.total_bayar) - (Number(editingItem.jumlah_potong_hutang) || 0) - (Number(editingItem.jumlah_masuk_titipan) || 0))
+    : 0;
+  const effectiveSaldoKas = editingId ? (saldoKas + oldTunaiKeluar) : saldoKas;
+  const isKasInsufficient = (form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > effectiveSaldoKas;
+  const kekuranganKas = Math.max(0, totalBayar - effectiveSaldoKas);
+  const sisaKasNanti = Math.max(0, effectiveSaldoKas - totalBayar);
+
   // Handle Submit Form
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -450,8 +519,8 @@ export default function Komoditas() {
       return;
     }
 
-    if ((form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas) {
-      toast.error(`Uang kas tidak mencukupi! Kurang ${formatRupiah(totalBayar - saldoKas)}. Harap siapkan uang kas modal belanja terlebih dahulu.`);
+    if (isKasInsufficient) {
+      toast.error(`Uang kas tidak mencukupi! Kurang ${formatRupiah(kekuranganKas)}. Harap siapkan uang kas modal belanja terlebih dahulu.`);
       return;
     }
 
@@ -499,19 +568,25 @@ export default function Komoditas() {
         tanggal: form.tanggal,
       };
 
-      const res = await request.post(API_ENDPOINTS.TRANSAKSI_BELI.CREATE, payload);
+      let res;
+      if (editingId) {
+        res = await request.put(API_ENDPOINTS.TRANSAKSI_BELI.UPDATE(editingId), payload);
+      } else {
+        res = await request.post(API_ENDPOINTS.TRANSAKSI_BELI.CREATE, payload);
+      }
+
       if (res?.success) {
-        toast.success('Transaksi pembelian berhasil dicatat & uang kas terpotong!');
-        setIsCreateOpen(false);
-        fetchTransactions(1, pagination.limit, search, selectedKomoditas);
+        toast.success(editingId ? 'Transaksi pembelian berhasil diperbarui!' : 'Transaksi pembelian berhasil dicatat & uang kas terpotong!');
+        setIsModalOpen(false);
+        fetchTransactions(pagination.page, pagination.limit, search, selectedKomoditas);
         fetchPelanggan();
         fetchSaldoKas();
 
-        // Open receipt modal
+        // Buka nota receipt
         setReceiptData({
           ...payload,
-          no_nota: res.data?.no_nota || 'NOT-B-Baru',
-          created_at: new Date().toISOString(),
+          no_nota: editingItem?.no_nota || res.data?.no_nota || 'NOT-B-Baru',
+          created_at: editingItem?.created_at || new Date().toISOString(),
         });
       }
     } catch (err) {
@@ -606,9 +681,9 @@ export default function Komoditas() {
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 w-full md:w-auto overflow-x-auto no-scrollbar order-2 md:order-1">
           {[
             { id: '', label: 'Semua Komoditas' },
+            { id: 'emas', label: '🪙 Emas (gram)' },
             { id: 'sawit', label: '🌾 Sawit (kg)' },
             { id: 'karet', label: '🌳 Karet (kg)' },
-            { id: 'emas', label: '🪙 Emas (gram)' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -668,7 +743,7 @@ export default function Komoditas() {
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-slate-900 text-sm">{item.nama_pelanggan}</div>
                       <div className="text-[11px] text-slate-500 mt-0.5">
-                        {formatWeight(item.berat_bersih, item.satuan)} @ {formatRupiah(item.harga_satuan)}
+                        {formatWeight(item.berat_kotor || item.berat_bersih, item.satuan)} @ {formatRupiah(item.harga_satuan)}
                         {item.kadar && ` (${item.kadar})`}
                       </div>
                     </div>
@@ -688,15 +763,23 @@ export default function Komoditas() {
                       <button
                         type="button"
                         onClick={() => setReceiptData(item)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
                       >
                         <Printer className="w-3.5 h-3.5" />
                         <span>Nota</span>
                       </button>
                       <button
                         type="button"
+                        onClick={() => openEditModal(item)}
+                        className="p-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-200 transition-colors cursor-pointer"
+                        title="Edit Transaksi"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setDeleteId(item.id)}
-                        className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200"
+                        className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors cursor-pointer"
                         title="Hapus Transaksi"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -718,7 +801,7 @@ export default function Komoditas() {
                 <th className="py-3 px-4">Tanggal</th>
                 <th className="py-3 px-4">Mitra / Petani</th>
                 <th className="py-3 px-4">Komoditas</th>
-                <th className="py-3 px-4 text-right">Berat Bersih</th>
+                <th className="py-3 px-4 text-right">Berat Kotor</th>
                 <th className="py-3 px-4 text-right">Harga Satuan</th>
                 <th className="py-3 px-4 text-right">Total Bayar</th>
                 <th className="py-3 px-4">Metode</th>
@@ -781,7 +864,7 @@ export default function Komoditas() {
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono-num font-bold text-slate-900 whitespace-nowrap">
-                        {formatWeight(item.berat_bersih, item.satuan)}
+                        {formatWeight(item.berat_kotor || item.berat_bersih, item.satuan)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono-num text-slate-600 whitespace-nowrap">
                         {formatRupiah(item.harga_satuan)}
@@ -799,15 +882,23 @@ export default function Komoditas() {
                           <button
                             type="button"
                             onClick={() => setReceiptData(item)}
-                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors"
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
                             title="Cetak Nota"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
                           <button
                             type="button"
+                            onClick={() => openEditModal(item)}
+                            className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-600 border border-amber-200 transition-colors cursor-pointer"
+                            title="Edit Transaksi"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => setDeleteId(item.id)}
-                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors"
+                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors cursor-pointer"
                             title="Hapus Transaksi"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -838,12 +929,16 @@ export default function Komoditas() {
         </div>
       </div>
 
-      {/* Modal: Timbang & Beli Baru */}
+      {/* Modal: Timbang & Beli Baru / Edit */}
       <Modal
-        isOpen={isCreateOpen}
-        onClose={() => !formSubmitting && setIsCreateOpen(false)}
-        title="Formulir Timbang & Pembelian Komoditas"
-        subtitle="Mendukung timbangan emas 0.000 gram, sawit & karet kg, dan potong kasbon otomatis"
+        isOpen={isModalOpen}
+        onClose={() => !formSubmitting && setIsModalOpen(false)}
+        title={editingId ? `Edit Transaksi Pembelian (${editingItem?.no_nota || ''})` : 'Formulir Timbang & Pembelian Komoditas'}
+        subtitle={
+          editingId
+            ? 'Perbarui data timbangan, harga satuan, atau metode pembayaran komoditas'
+            : 'Mendukung timbangan emas 0.000 gram, sawit & karet kg, dan potong kasbon otomatis'
+        }
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -854,9 +949,9 @@ export default function Komoditas() {
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
+                { id: 'emas', label: '🪙 Emas (0.000 gr)' },
                 { id: 'sawit', label: '🌾 Kelapa Sawit (kg)' },
                 { id: 'karet', label: '🌳 Karet Rakyat (kg)' },
-                { id: 'emas', label: '🪙 Emas (0.000 gr)' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -1266,7 +1361,7 @@ export default function Komoditas() {
             {(form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && (
               <div
                 className={`p-3.5 rounded-2xl border text-xs space-y-2.5 transition-all ${
-                  totalBayar > saldoKas
+                  isKasInsufficient
                     ? 'bg-rose-50/90 border-rose-200 text-rose-900'
                     : 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
                 }`}
@@ -1274,24 +1369,26 @@ export default function Komoditas() {
                 <div className="flex items-center justify-between">
                   <span className="font-bold flex items-center gap-1.5">
                     <Wallet className="w-4 h-4" />
-                    Simulasi Saldo Kas Toko
+                    Simulasi Saldo Kas Toko {editingId ? '(Mode Edit)' : ''}
                   </span>
                   <span
                     className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                      totalBayar > saldoKas
+                      isKasInsufficient
                         ? 'bg-rose-100 text-rose-700'
                         : 'bg-emerald-100 text-emerald-700'
                     }`}
                   >
-                    {totalBayar > saldoKas ? 'Kas Tidak Cukup' : 'Kas Siap & Cukup'}
+                    {isKasInsufficient ? 'Kas Tidak Cukup' : 'Kas Siap & Cukup'}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 py-0.5 text-center font-mono-num">
                   <div className="p-2 rounded-xl bg-white/90 border border-slate-200/80 shadow-2xs">
-                    <div className="text-[10px] text-slate-500 font-sans">Kas Tersedia</div>
+                    <div className="text-[10px] text-slate-500 font-sans">
+                      {editingId ? 'Kas + Ref' : 'Kas Tersedia'}
+                    </div>
                     <div className="font-bold text-slate-800 text-xs truncate">
-                      {formatRupiah(saldoKas)}
+                      {formatRupiah(effectiveSaldoKas)}
                     </div>
                   </div>
                   <div className="p-2 rounded-xl bg-white/90 border border-slate-200/80 shadow-2xs">
@@ -1304,23 +1401,23 @@ export default function Komoditas() {
                     <div className="text-[10px] text-slate-500 font-sans">Sisa Kas Nanti</div>
                     <div
                       className={`font-black text-xs truncate ${
-                        totalBayar > saldoKas ? 'text-rose-600' : 'text-emerald-700'
+                        isKasInsufficient ? 'text-rose-600' : 'text-emerald-700'
                       }`}
                     >
-                      {formatRupiah(Math.max(0, saldoKas - totalBayar))}
+                      {formatRupiah(sisaKasNanti)}
                     </div>
                   </div>
                 </div>
 
-                {totalBayar > saldoKas ? (
+                {isKasInsufficient ? (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-rose-200/80">
                     <span className="text-[11px] text-rose-700 font-medium">
-                      ⚠️ Sisa kas kurang <strong>{formatRupiah(totalBayar - saldoKas)}</strong>. Harap siapkan uang kas dulu.
+                      ⚠️ Sisa kas kurang <strong>{formatRupiah(kekuranganKas)}</strong>. Harap siapkan uang kas dulu.
                     </span>
                     <button
                       type="button"
                       onClick={() => setIsKasModalOpen(true)}
-                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] shadow-xs flex items-center justify-center gap-1 shrink-0 transition-all"
+                      className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] shadow-xs flex items-center justify-center gap-1 shrink-0 transition-all cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
                       Siapkan Kas Sekarang
@@ -1328,8 +1425,8 @@ export default function Komoditas() {
                   </div>
                 ) : (
                   <p className="text-[11px] text-emerald-700 font-medium">
-                    ✅ Uang kas cukup. Setelah transaksi ini disimpan, sisa uang kas toko menjadi{' '}
-                    <strong>{formatRupiah(saldoKas - totalBayar)}</strong>.
+                    ✅ Uang kas cukup. Setelah transaksi ini {editingId ? 'diperbarui' : 'disimpan'}, sisa uang kas toko menjadi{' '}
+                    <strong>{formatRupiah(sisaKasNanti)}</strong>.
                   </p>
                 )}
               </div>
@@ -1341,16 +1438,16 @@ export default function Komoditas() {
             <button
               type="button"
               disabled={formSubmitting}
-              onClick={() => setIsCreateOpen(false)}
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold"
+              onClick={() => setIsModalOpen(false)}
+              className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer"
             >
               Batal
             </button>
             <button
               type="submit"
-              disabled={formSubmitting || ((form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas)}
-              className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 ${
-                (form.metode_bayar === 'tunai' || form.metode_bayar === 'transfer') && totalBayar > saldoKas
+              disabled={formSubmitting || isKasInsufficient}
+              className={`px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 cursor-pointer ${
+                isKasInsufficient
                   ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                   : 'bg-amber-500 hover:bg-amber-600 text-white'
               }`}
@@ -1358,7 +1455,7 @@ export default function Komoditas() {
               {formSubmitting && (
                 <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
               )}
-              <span>Simpan & Cetak Nota</span>
+              <span>{editingId ? 'Simpan Perubahan' : 'Simpan & Cetak Nota'}</span>
             </button>
           </div>
         </form>

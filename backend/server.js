@@ -1201,10 +1201,11 @@ app.post('/api/transaksi-beli', async (req, res) => {
       [kodeProduk]
     );
 
+    const stockWeightToAdd = jenis_komoditas === 'emas' ? grossWeight : netWeight;
     if (existProd.length > 0) {
       await connection.query(
         'UPDATE produk SET stok = stok + ?, harga_beli = ? WHERE kode = ?',
-        [netWeight, unitPrice, kodeProduk]
+        [stockWeightToAdd, unitPrice, kodeProduk]
       );
     } else {
       let namaProd = 'Emas Murni / Leburan';
@@ -1281,6 +1282,349 @@ app.post('/api/transaksi-beli', async (req, res) => {
   }
 });
 
+app.get('/api/transaksi-beli/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const [rows] = await db.query('SELECT * FROM transaksi_beli WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Data transaksi pembelian tidak ditemukan' });
+    }
+    return res.json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('GET /api/transaksi-beli/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.put('/api/transaksi-beli/:id', async (req, res) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const id = parseInt(req.params.id, 10);
+    const [existingRows] = await connection.query('SELECT * FROM transaksi_beli WHERE id = ? FOR UPDATE', [id]);
+    if (existingRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ success: false, message: 'Data transaksi pembelian tidak ditemukan' });
+    }
+    const oldTrans = existingRows[0];
+
+    const {
+      pelanggan_id,
+      nama_pelanggan,
+      jenis_komoditas,
+      berat_kotor,
+      potongan_persen = 0,
+      potongan_nilai = 0,
+      satuan = 'kg',
+      kadar = '',
+      harga_satuan,
+      biaya_lain = 0,
+      metode_bayar = 'tunai',
+      jumlah_potong_hutang = 0,
+      jumlah_masuk_titipan = 0,
+      catatan = '',
+      tanggal = oldTrans.tanggal,
+    } = req.body;
+
+    if (!jenis_komoditas || !berat_kotor || !harga_satuan) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Komoditas, berat kotor, dan harga satuan wajib diisi!',
+      });
+    }
+
+    const grossWeight = parseFloat(berat_kotor);
+    let netWeight = grossWeight;
+    const cutVal = parseFloat(potongan_nilai) || 0;
+    const cutPct = parseFloat(potongan_persen) || 0;
+
+    if (cutVal > 0) {
+      netWeight = Math.max(0, grossWeight - cutVal);
+    } else if (cutPct > 0) {
+      netWeight = Math.max(0, grossWeight - (grossWeight * cutPct) / 100);
+    }
+
+    netWeight = Math.round(netWeight * 1000) / 1000;
+    const unitPrice = parseFloat(harga_satuan);
+    const grossTotal = Math.round(grossWeight * unitPrice);
+    const subtotal = req.body.subtotal !== undefined
+      ? parseFloat(req.body.subtotal)
+      : (jenis_komoditas === 'emas' ? grossTotal : Math.round(netWeight * unitPrice));
+    const extraCost = parseFloat(biaya_lain) || 0;
+    const totalBayar = req.body.total_bayar !== undefined 
+      ? Math.max(0, parseFloat(req.body.total_bayar)) 
+      : (jenis_komoditas === 'emas' ? Math.max(0, grossTotal - extraCost) : Math.max(0, subtotal - extraCost));
+
+    // Hitung perubahan pengeluaran uang kas
+    const oldTunaiKeluar = (oldTrans.metode_bayar === 'tunai' || oldTrans.metode_bayar === 'transfer')
+      ? Math.max(0, parseFloat(oldTrans.total_bayar) - (parseFloat(oldTrans.jumlah_potong_hutang) || 0) - (parseFloat(oldTrans.jumlah_masuk_titipan) || 0))
+      : 0;
+
+    const newTunaiKeluar = (metode_bayar === 'tunai' || metode_bayar === 'transfer')
+      ? Math.max(0, totalBayar - (parseFloat(jumlah_potong_hutang) || 0) - (parseFloat(jumlah_masuk_titipan) || 0))
+      : 0;
+
+    const selisihKas = newTunaiKeluar - oldTunaiKeluar; // jika positif, butuh tambahan kas
+
+    if (selisihKas > 0) {
+      const [kasSummary] = await connection.query(`
+        SELECT 
+          COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) AS saldo_kas
+        FROM kas
+      `);
+      const currentSaldoKas = parseFloat(kasSummary[0]?.saldo_kas) || 0;
+
+      if (currentSaldoKas < selisihKas) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Saldo uang kas tidak mencukupi untuk penyesuaian ini! Dibutuhkan tambahan uang kas Rp ${Math.round(selisihKas).toLocaleString('id-ID')}, sedangkan sisa uang kas toko Rp ${Math.round(currentSaldoKas).toLocaleString('id-ID')}.`,
+        });
+      }
+    }
+
+    // 1. Revert stok produk komoditas lama
+    const oldKodeProduk = `KMD-${oldTrans.jenis_komoditas.toUpperCase()}`;
+    const oldStockWeight = oldTrans.jenis_komoditas === 'emas'
+      ? (parseFloat(oldTrans.berat_kotor) || parseFloat(oldTrans.berat_bersih) || 0)
+      : (parseFloat(oldTrans.berat_bersih) || 0);
+    await connection.query(
+      'UPDATE produk SET stok = GREATEST(0, stok - ?) WHERE kode = ?',
+      [oldStockWeight, oldKodeProduk]
+    );
+
+    // Tambah stok ke produk komoditas baru
+    const newKodeProduk = `KMD-${jenis_komoditas.toUpperCase()}`;
+    const [existProd] = await connection.query(
+      'SELECT id, stok FROM produk WHERE kode = ? FOR UPDATE',
+      [newKodeProduk]
+    );
+    const newStockWeight = jenis_komoditas === 'emas' ? grossWeight : netWeight;
+    if (existProd.length > 0) {
+      await connection.query(
+        'UPDATE produk SET stok = stok + ?, harga_beli = ? WHERE kode = ?',
+        [newStockWeight, unitPrice, newKodeProduk]
+      );
+    } else {
+      let namaProd = 'Emas Murni / Leburan';
+      let katProd = 'Perhiasan Emas';
+      let satProd = 'gram';
+      let defaultJual = unitPrice;
+
+      if (jenis_komoditas === 'sawit') {
+        namaProd = 'Kelapa Sawit (TBS)';
+        katProd = 'Pertanian';
+        satProd = 'kg';
+      } else if (jenis_komoditas === 'karet') {
+        namaProd = 'Karet Rakyat';
+        katProd = 'Pertanian';
+        satProd = 'kg';
+      } else {
+        namaProd = `Komoditas ${jenis_komoditas.toUpperCase()}`;
+        katProd = 'Umum';
+        satProd = satuan || 'kg';
+      }
+
+      await connection.query(
+        `INSERT INTO produk (kode, nama, kategori, satuan, harga_beli, harga_jual, stok, deskripsi)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newKodeProduk,
+          namaProd,
+          katProd,
+          satProd,
+          unitPrice,
+          defaultJual,
+          netWeight,
+          `Stok otomatis dari pembelian komoditas ${jenis_komoditas.toUpperCase()}`,
+        ]
+      );
+    }
+
+    // 2. Update atau hapus/buat catatan pengeluaran kas
+    const namaKomoditas = jenis_komoditas === 'emas' ? 'Emas' : jenis_komoditas === 'sawit' ? 'Sawit' : jenis_komoditas === 'karet' ? 'Karet' : jenis_komoditas.toUpperCase();
+    const dateCode = (tanggal || '').replace(/-/g, '') || new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+    const [existKas] = await connection.query(
+      "SELECT id FROM kas WHERE referensi_id = ? AND sumber = 'komoditas' LIMIT 1",
+      [oldTrans.no_nota]
+    );
+
+    if (newTunaiKeluar > 0) {
+      if (existKas.length > 0) {
+        await connection.query(
+          `UPDATE kas SET 
+            kategori = ?, 
+            jumlah = ?, 
+            keterangan = ?, 
+            tanggal = ? 
+           WHERE id = ?`,
+          [
+            `Beli ${namaKomoditas}`,
+            newTunaiKeluar,
+            `Pembelian ${namaKomoditas} (${netWeight} ${jenis_komoditas === 'emas' ? 'gram' : satuan}) - Nota ${oldTrans.no_nota} - ${nama_pelanggan || 'Pelanggan Umum'}`,
+            tanggal,
+            existKas[0].id,
+          ]
+        );
+      } else {
+        const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+        const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+        const kode_kas = `KAS-OUT-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+
+        await connection.query(
+          `INSERT INTO kas (
+            kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+          ) VALUES (?, 'keluar', ?, ?, 'komoditas', ?, ?, ?)`,
+          [
+            kode_kas,
+            `Beli ${namaKomoditas}`,
+            newTunaiKeluar,
+            oldTrans.no_nota,
+            `Pembelian ${namaKomoditas} (${netWeight} ${jenis_komoditas === 'emas' ? 'gram' : satuan}) - Nota ${oldTrans.no_nota} - ${nama_pelanggan || 'Pelanggan Umum'}`,
+            tanggal,
+          ]
+        );
+      }
+    } else {
+      if (existKas.length > 0) {
+        await connection.query("DELETE FROM kas WHERE referensi_id = ? AND sumber = 'komoditas'", [oldTrans.no_nota]);
+      }
+    }
+
+    // 3. Rollback old hutang & titipan jika ada
+    if (oldTrans.pelanggan_id) {
+      const oldCutDebt = parseFloat(oldTrans.jumlah_potong_hutang) || (oldTrans.metode_bayar === 'potong_hutang' ? parseFloat(oldTrans.total_bayar) : 0);
+      if (oldCutDebt > 0) {
+        await connection.query('UPDATE pelanggan SET saldo_hutang = saldo_hutang + ? WHERE id = ?', [oldCutDebt, oldTrans.pelanggan_id]);
+        await connection.query('DELETE FROM pembayaran_hutang WHERE pelanggan_id = ? AND catatan LIKE ?', [oldTrans.pelanggan_id, `%${oldTrans.no_nota}%`]);
+      }
+      const oldAddSavings = parseFloat(oldTrans.jumlah_masuk_titipan) || (oldTrans.metode_bayar === 'masuk_titipan' ? parseFloat(oldTrans.total_bayar) : 0);
+      if (oldAddSavings > 0) {
+        await connection.query('UPDATE pelanggan SET saldo_titipan = GREATEST(0, saldo_titipan - ?) WHERE id = ?', [oldAddSavings, oldTrans.pelanggan_id]);
+        await connection.query('DELETE FROM titipan WHERE pelanggan_id = ? AND keterangan LIKE ?', [oldTrans.pelanggan_id, `%${oldTrans.no_nota}%`]);
+      }
+    }
+
+    // Apply new hutang & titipan jika ada
+    if (pelanggan_id) {
+      const [pelangganRows] = await connection.query('SELECT * FROM pelanggan WHERE id = ? FOR UPDATE', [pelanggan_id]);
+      if (pelangganRows.length > 0) {
+        const cust = pelangganRows[0];
+        const cutDebt = parseFloat(jumlah_potong_hutang) || (metode_bayar === 'potong_hutang' ? totalBayar : 0);
+        const prevCustDebt = parseFloat(cust.saldo_hutang) || 0;
+        if (cutDebt > 0 && prevCustDebt > 0) {
+          const actualCut = Math.min(prevCustDebt, cutDebt);
+          const newDebt = Number(Math.max(0, prevCustDebt - actualCut).toFixed(2));
+          await connection.query('UPDATE pelanggan SET saldo_hutang = ? WHERE id = ?', [newDebt, pelanggan_id]);
+          const kode_bayar = `BYR-${Date.now().toString().slice(-4)}`;
+          await connection.query(
+            `INSERT INTO pembayaran_hutang (
+              kode_bayar, hutang_id, pelanggan_id, jumlah_bayar, metode_bayar, 
+              sisa_sebelum, sisa_sesudah, catatan, tanggal
+            ) VALUES (?, (SELECT id FROM hutang WHERE pelanggan_id = ? AND status != 'lunas' LIMIT 1), ?, ?, 'potong_hasil_komoditas', ?, ?, ?, ?)`,
+            [
+              kode_bayar,
+              pelanggan_id,
+              pelanggan_id,
+              actualCut,
+              prevCustDebt,
+              newDebt,
+              `Potong dari nota pembelian ${oldTrans.no_nota} (${jenis_komoditas.toUpperCase()})`,
+              tanggal,
+            ]
+          );
+        }
+
+        const addSavings = parseFloat(jumlah_masuk_titipan) || (metode_bayar === 'masuk_titipan' ? totalBayar : 0);
+        if (addSavings > 0) {
+          const prevSaving = parseFloat(cust.saldo_titipan) || 0;
+          const newSaving = Number((prevSaving + addSavings).toFixed(2));
+          await connection.query('UPDATE pelanggan SET saldo_titipan = ? WHERE id = ?', [newSaving, pelanggan_id]);
+          const kode_titipan = `TTP-${Date.now().toString().slice(-4)}`;
+          await connection.query(
+            `INSERT INTO titipan (
+              kode_titipan, pelanggan_id, jenis_transaksi, jumlah, 
+              saldo_sebelum, saldo_sesudah, keterangan, tanggal
+            ) VALUES (?, ?, 'masuk_dari_jual_komoditas', ?, ?, ?, ?, ?)`,
+            [
+              kode_titipan,
+              pelanggan_id,
+              addSavings,
+              prevSaving,
+              newSaving,
+              `Simpanan hasil jual ${jenis_komoditas.toUpperCase()} (${netWeight} ${jenis_komoditas === 'emas' ? 'gram' : satuan})`,
+              tanggal,
+            ]
+          );
+        }
+      }
+    }
+
+    // 4. Update data transaksi_beli
+    await connection.query(
+      `UPDATE transaksi_beli SET
+        pelanggan_id = ?,
+        nama_pelanggan = ?,
+        jenis_komoditas = ?,
+        berat_kotor = ?,
+        potongan_persen = ?,
+        potongan_nilai = ?,
+        berat_bersih = ?,
+        satuan = ?,
+        kadar = ?,
+        harga_satuan = ?,
+        subtotal = ?,
+        biaya_lain = ?,
+        total_bayar = ?,
+        metode_bayar = ?,
+        jumlah_potong_hutang = ?,
+        jumlah_masuk_titipan = ?,
+        catatan = ?,
+        tanggal = ?
+      WHERE id = ?`,
+      [
+        pelanggan_id || null,
+        nama_pelanggan || 'Pelanggan Umum',
+        jenis_komoditas,
+        grossWeight,
+        cutPct,
+        cutVal,
+        netWeight,
+        jenis_komoditas === 'emas' ? 'gram' : satuan,
+        kadar || (jenis_komoditas === 'emas' ? '24K' : '-'),
+        unitPrice,
+        subtotal,
+        extraCost,
+        totalBayar,
+        metode_bayar,
+        parseFloat(jumlah_potong_hutang) || 0,
+        parseFloat(jumlah_masuk_titipan) || 0,
+        catatan || null,
+        tanggal,
+        id,
+      ]
+    );
+
+    await connection.commit();
+
+    const [updatedTrans] = await db.query('SELECT * FROM transaksi_beli WHERE id = ?', [id]);
+    return res.json({
+      success: true,
+      message: 'Data transaksi pembelian berhasil diperbarui',
+      data: updatedTrans[0],
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('PUT /api/transaksi-beli/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  } finally {
+    connection.release();
+  }
+});
+
 app.delete('/api/transaksi-beli/:id', async (req, res) => {
   const connection = await db.getConnection();
   try {
@@ -1290,15 +1634,33 @@ app.delete('/api/transaksi-beli/:id', async (req, res) => {
     if (rows.length > 0) {
       const trans = rows[0];
       const kodeProduk = `KMD-${trans.jenis_komoditas.toUpperCase()}`;
+      const revertStockWeight = trans.jenis_komoditas === 'emas'
+        ? (parseFloat(trans.berat_kotor) || parseFloat(trans.berat_bersih) || 0)
+        : (parseFloat(trans.berat_bersih) || 0);
       await connection.query(
         'UPDATE produk SET stok = GREATEST(0, stok - ?) WHERE kode = ?',
-        [parseFloat(trans.berat_bersih) || 0, kodeProduk]
+        [revertStockWeight, kodeProduk]
       );
       // Hapus otomatis catatan pengeluaran kas terkait agar saldo uang kas toko kembali (rollback kas)
       await connection.query(
         "DELETE FROM kas WHERE referensi_id = ? AND sumber = 'komoditas'",
         [trans.no_nota]
       );
+
+      // Rollback potong hutang jika ada
+      if (trans.pelanggan_id) {
+        const cutDebt = parseFloat(trans.jumlah_potong_hutang) || (trans.metode_bayar === 'potong_hutang' ? parseFloat(trans.total_bayar) : 0);
+        if (cutDebt > 0) {
+          await connection.query('UPDATE pelanggan SET saldo_hutang = saldo_hutang + ? WHERE id = ?', [cutDebt, trans.pelanggan_id]);
+          await connection.query('DELETE FROM pembayaran_hutang WHERE pelanggan_id = ? AND catatan LIKE ?', [trans.pelanggan_id, `%${trans.no_nota}%`]);
+        }
+        const addSavings = parseFloat(trans.jumlah_masuk_titipan) || (trans.metode_bayar === 'masuk_titipan' ? parseFloat(trans.total_bayar) : 0);
+        if (addSavings > 0) {
+          await connection.query('UPDATE pelanggan SET saldo_titipan = GREATEST(0, saldo_titipan - ?) WHERE id = ?', [addSavings, trans.pelanggan_id]);
+          await connection.query('DELETE FROM titipan WHERE pelanggan_id = ? AND keterangan LIKE ?', [trans.pelanggan_id, `%${trans.no_nota}%`]);
+        }
+      }
+
       await connection.query('DELETE FROM transaksi_beli WHERE id = ?', [id]);
     }
     await connection.commit();
@@ -2295,9 +2657,9 @@ app.get('/api/laporan/ringkasan', async (req, res) => {
     const [jualHariIni] = await db.query('SELECT COALESCE(SUM(total_akhir), 0) as total FROM transaksi_jual WHERE tanggal = ?', [today]);
 
     // Total komoditas
-    const [emasSum] = await db.query("SELECT COALESCE(SUM(berat_bersih), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'emas'");
-    const [sawitSum] = await db.query("SELECT COALESCE(SUM(berat_bersih), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'sawit'");
-    const [karetSum] = await db.query("SELECT COALESCE(SUM(berat_bersih), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'karet'");
+    const [emasSum] = await db.query("SELECT COALESCE(SUM(CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'emas'");
+    const [sawitSum] = await db.query("SELECT COALESCE(SUM(CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'sawit'");
+    const [karetSum] = await db.query("SELECT COALESCE(SUM(CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END), 0) as total FROM transaksi_beli WHERE jenis_komoditas = 'karet'");
 
     return res.json({
       success: true,
@@ -2389,9 +2751,9 @@ app.get('/api/laporan/periodik', async (req, res) => {
         SELECT 
           DATE_FORMAT(tanggal, ?) as label,
           SUM(total_bayar) as total_beli,
-          SUM(CASE WHEN jenis_komoditas = 'emas' THEN berat_bersih ELSE 0 END) as emas_gr,
-          SUM(CASE WHEN jenis_komoditas = 'sawit' THEN berat_bersih ELSE 0 END) as sawit_kg,
-          SUM(CASE WHEN jenis_komoditas = 'karet' THEN berat_bersih ELSE 0 END) as karet_kg
+          SUM(CASE WHEN jenis_komoditas = 'emas' THEN (CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END) ELSE 0 END) as emas_gr,
+          SUM(CASE WHEN jenis_komoditas = 'sawit' THEN (CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END) ELSE 0 END) as sawit_kg,
+          SUM(CASE WHEN jenis_komoditas = 'karet' THEN (CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END) ELSE 0 END) as karet_kg
         FROM transaksi_beli
         WHERE 1=1 ${filterBeli}
         GROUP BY DATE_FORMAT(tanggal, ?)
@@ -2482,9 +2844,9 @@ async function ensureCommodityProducts() {
     for (const c of commodities) {
       const [exists] = await db.query('SELECT id, stok FROM produk WHERE kode = ?', [c.kode]);
       if (exists.length === 0) {
-        // Hitung total berat bersih yang pernah dibeli
+        // Hitung total berat komoditas yang pernah dibeli
         const [sumBeli] = await db.query(
-          'SELECT COALESCE(SUM(berat_bersih), 0) as total FROM transaksi_beli WHERE jenis_komoditas = ?',
+          "SELECT COALESCE(SUM(CASE WHEN berat_kotor > 0 THEN berat_kotor ELSE berat_bersih END), 0) as total FROM transaksi_beli WHERE jenis_komoditas = ?",
           [c.jenis]
         );
         const totalStok = parseFloat(sumBeli[0].total) || 0;

@@ -346,7 +346,7 @@ export default function Dashboard() {
                       </td>
                       <td className="py-2.5 px-3">
                         <span className="capitalize px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                          {item.jenis_komoditas} ({formatWeight(item.berat_bersih, item.satuan)})
+                          {item.jenis_komoditas} ({formatWeight(item.berat_kotor || item.berat_bersih, item.satuan)})
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono-num font-bold text-amber-600">

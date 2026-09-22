@@ -2030,6 +2030,27 @@ app.post('/api/hutang', async (req, res) => {
       [amount, pelanggan_id]
     );
 
+    // SINKRONISASI KAS DI LACI: Jika kasbon tunai, kasir mengeluarkan uang tunai fisik toko (KAS KELUAR)
+    if (tipe === 'kasbon_tunai' && amount > 0) {
+      const dateCode = (tanggal || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+      const [maxKas] = await connection.query('SELECT MAX(id) as maxId FROM kas');
+      const nextKasId = (maxKas[0]?.maxId || 0) + 1;
+      const kode_kas = `KAS-OUT-${dateCode}-${String(nextKasId).padStart(3, '0')}`;
+
+      const [custRows] = await connection.query('SELECT nama FROM pelanggan WHERE id = ?', [pelanggan_id]);
+      const namaCust = custRows[0]?.nama || 'Pelanggan';
+      const kasKet = keterangan 
+        ? `Kasbon tunai - ${namaCust}: ${keterangan}` 
+        : `Kasbon tunai - ${namaCust} (${kode_hutang})`;
+
+      await connection.query(
+        `INSERT INTO kas (
+          kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+        ) VALUES (?, 'keluar', 'Kasbon Tunai', ?, 'hutang', ?, ?, ?)`,
+        [kode_kas, amount, kode_hutang, kasKet, tanggal]
+      );
+    }
+
     await connection.commit();
 
     const [newHutang] = await db.query(
@@ -2477,11 +2498,20 @@ app.get('/api/kas', async (req, res) => {
       [...params, limit, offset]
     );
 
-    // Hitung saldo kas riil keseluruhan toko (Total Masuk - Total Keluar)
+    // Hitung saldo kas riil keseluruhan toko (Total Masuk - Total Keluar) dan rinciannya
     const [allSummary] = await db.query(`
       SELECT 
         COALESCE(SUM(CASE WHEN tipe = 'masuk' THEN jumlah ELSE 0 END), 0) as total_masuk,
-        COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as total_keluar
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' THEN jumlah ELSE 0 END), 0) as total_keluar,
+        -- Rincian Pemasukan
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' AND sumber IN ('kasir', 'manual') THEN jumlah ELSE 0 END), 0) as omzet_masuk,
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' AND sumber = 'bayar_hutang' THEN jumlah ELSE 0 END), 0) as pelunasan_kasbon_masuk,
+        COALESCE(SUM(CASE WHEN tipe = 'masuk' AND sumber = 'titipan' THEN jumlah ELSE 0 END), 0) as setor_tabungan_masuk,
+        -- Rincian Pengeluaran
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' AND sumber = 'hutang' THEN jumlah ELSE 0 END), 0) as kasbon_keluar,
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' AND sumber = 'komoditas' THEN jumlah ELSE 0 END), 0) as komoditas_keluar,
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' AND sumber = 'manual' THEN jumlah ELSE 0 END), 0) as operasional_keluar,
+        COALESCE(SUM(CASE WHEN tipe = 'keluar' AND sumber = 'titipan' THEN jumlah ELSE 0 END), 0) as tarik_tabungan_keluar
       FROM kas
     `);
     const totalMasukAll = parseFloat(allSummary[0].total_masuk) || 0;
@@ -2512,6 +2542,13 @@ app.get('/api/kas', async (req, res) => {
         saldo_kas: saldoKasSaatIni,
         total_masuk: totalMasukAll,
         total_keluar: totalKeluarAll,
+        omzet_masuk: parseFloat(allSummary[0].omzet_masuk) || 0,
+        pelunasan_kasbon_masuk: parseFloat(allSummary[0].pelunasan_kasbon_masuk) || 0,
+        setor_tabungan_masuk: parseFloat(allSummary[0].setor_tabungan_masuk) || 0,
+        kasbon_keluar: parseFloat(allSummary[0].kasbon_keluar) || 0,
+        operasional_keluar: parseFloat(allSummary[0].operasional_keluar) || 0,
+        komoditas_keluar: parseFloat(allSummary[0].komoditas_keluar) || 0,
+        tarik_tabungan_keluar: parseFloat(allSummary[0].tarik_tabungan_keluar) || 0,
         kas_hari_ini: {
           masuk: hariIniMasuk,
           keluar: hariIniKeluar,
@@ -2635,6 +2672,21 @@ app.delete('/api/kas/:id', async (req, res) => {
     return res.json({ success: true, message: 'Transaksi kas berhasil dihapus' });
   } catch (error) {
     console.error('DELETE /api/kas/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/kas/perbaiki-sinkronisasi - Perbaiki sinkronisasi kas laci, tabungan titipan, dan kasbon
+app.post('/api/kas/perbaiki-sinkronisasi', async (req, res) => {
+  try {
+    await repairTitipanAndKasSync();
+    await repairKasbonAndKasSync();
+    return res.json({
+      success: true,
+      message: 'Seluruh mutasi kas di laci, kasbon tunai, dan tabungan mitra berhasil diperiksa & disinkronkan!',
+    });
+  } catch (error) {
+    console.error('POST /api/kas/perbaiki-sinkronisasi error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -2883,7 +2935,7 @@ async function ensureKasTable() {
         tipe ENUM('masuk', 'keluar') NOT NULL,
         kategori VARCHAR(60) NOT NULL,
         jumlah DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-        sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan') DEFAULT 'manual',
+        sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan', 'hutang') DEFAULT 'manual',
         referensi_id VARCHAR(50) DEFAULT NULL,
         keterangan TEXT DEFAULT NULL,
         tanggal DATE NOT NULL,
@@ -2894,16 +2946,74 @@ async function ensureKasTable() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
 
-    // Pastikan ENUM sumber memiliki 'titipan' jika tabel sudah ada sebelumnya
+    // Pastikan ENUM sumber memiliki 'titipan' dan 'hutang' jika tabel sudah ada sebelumnya
     try {
       await db.query(
-        "ALTER TABLE kas MODIFY COLUMN sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan') DEFAULT 'manual'"
+        "ALTER TABLE kas MODIFY COLUMN sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan', 'hutang') DEFAULT 'manual'"
       );
     } catch {
       // Abaikan jika kolom sudah sesuai
     }
   } catch (err) {
     // Silent catch if DB not ready
+  }
+}
+
+// Fungsi perbaikan saldo dan sinkronisasi kasbon tunai ke buku kas toko (Kas Keluar)
+async function repairKasbonAndKasSync() {
+  let connection;
+  try {
+    connection = await db.getConnection();
+
+    // 1. Pastikan kolom ENUM sumber mendukung 'hutang'
+    try {
+      await connection.query(
+        "ALTER TABLE kas MODIFY COLUMN sumber ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan', 'hutang') DEFAULT 'manual'"
+      );
+    } catch {}
+
+    // 2. Ambil seluruh catatan kasbon tunai
+    const [kasbonRows] = await connection.query(`
+      SELECT h.*, p.nama as nama_pelanggan 
+      FROM hutang h 
+      JOIN pelanggan p ON h.pelanggan_id = p.id 
+      WHERE h.tipe = 'kasbon_tunai'
+      ORDER BY h.id ASC
+    `);
+
+    for (const h of kasbonRows) {
+      const [existKas] = await connection.query(
+        'SELECT id FROM kas WHERE referensi_id = ? OR keterangan LIKE ?',
+        [h.kode_hutang, `%${h.kode_hutang}%`]
+      );
+
+      if (existKas.length === 0) {
+        const rawDate = h.tanggal ? new Date(h.tanggal).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+        const dateCode = rawDate.replace(/-/g, '');
+        const kode_kas = `KAS-OUT-SYNC-${dateCode}-${h.id}`;
+        const kasKet = h.keterangan 
+          ? `Kasbon tunai - ${h.nama_pelanggan}: ${h.keterangan}` 
+          : `Kasbon tunai - ${h.nama_pelanggan} (${h.kode_hutang})`;
+
+        await connection.query(
+          `INSERT INTO kas (
+            kode_transaksi, tipe, kategori, jumlah, sumber, referensi_id, keterangan, tanggal
+          ) VALUES (?, 'keluar', 'Kasbon Tunai', ?, 'hutang', ?, ?, ?)`,
+          [
+            kode_kas,
+            parseFloat(h.jumlah_hutang) || 0,
+            h.kode_hutang,
+            kasKet,
+            rawDate
+          ]
+        );
+      }
+    }
+    console.log('[Auto-Sync] Kasbon tunai dan mutasi kas di laci berhasil diperiksa & disinkronkan.');
+  } catch (err) {
+    console.error('[Auto-Sync] Gagal menjalankan repairKasbonAndKasSync:', err.message);
+  } finally {
+    if (connection) connection.release();
   }
 }
 
@@ -3021,4 +3131,5 @@ app.listen(PORT, async () => {
   await ensureKasTable();
   await ensureCommodityProducts();
   await repairTitipanAndKasSync();
+  await repairKasbonAndKasSync();
 });

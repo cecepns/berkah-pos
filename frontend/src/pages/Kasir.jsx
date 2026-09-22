@@ -24,6 +24,7 @@ import { API_ENDPOINTS } from '@/utils/endpoints';
 import { formatRupiah, getImageUrl } from '@/utils/formatters';
 import ReceiptModal from '@/components/common/ReceiptModal';
 import EmptyState from '@/components/common/EmptyState';
+import Modal from '@/components/common/Modal';
 
 const customCustomerSelectStyles = {
   control: (base, state) => ({
@@ -150,6 +151,57 @@ export default function Kasir() {
       toast.error('Gagal mengambil katalog produk');
     } finally {
       setLoadingProducts(false);
+    }
+  };
+
+  // State Modal Pengeluaran Laci / Operasional Kasir
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({
+    kategori: 'Gas Elpiji',
+    jumlah: '',
+    keterangan: '',
+    tanggal: new Date().toISOString().slice(0, 10),
+  });
+
+  const handleExpenseSubmit = async (e) => {
+    e.preventDefault();
+    const nominal = parseFloat(expenseForm.jumlah);
+    if (!nominal || nominal <= 0) {
+      toast.error('Nominal pengeluaran kas wajib lebih dari 0!');
+      return;
+    }
+    if (!expenseForm.kategori) {
+      toast.error('Pilih kategori pengeluaran operasional!');
+      return;
+    }
+
+    setExpenseSubmitting(true);
+    try {
+      const res = await request.post(API_ENDPOINTS.KAS.CREATE, {
+        tipe: 'keluar',
+        kategori: expenseForm.kategori,
+        jumlah: nominal,
+        keterangan: expenseForm.keterangan ? expenseForm.keterangan.trim() : null,
+        tanggal: expenseForm.tanggal,
+      });
+
+      if (res?.success) {
+        toast.success(
+          `Pengeluaran ${expenseForm.kategori} ${formatRupiah(nominal)} berhasil dicatat & kas laci terpotong!`
+        );
+        setIsExpenseModalOpen(false);
+        setExpenseForm({
+          kategori: 'Gas Elpiji',
+          jumlah: '',
+          keterangan: '',
+          tanggal: new Date().toISOString().slice(0, 10),
+        });
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal mencatat pengeluaran kas');
+    } finally {
+      setExpenseSubmitting(false);
     }
   };
 
@@ -436,16 +488,28 @@ export default function Kasir() {
           </p>
         </div>
 
-        {cart.length > 0 && (
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {/* Tombol Cepat Catat Kas Keluar / Operasional Laci */}
           <button
             type="button"
-            onClick={clearCart}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold self-start sm:self-auto transition-colors shadow-2xs"
+            onClick={() => setIsExpenseModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all shadow-2xs cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Keranjang
+            <Minus className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span>Pengeluaran Laci (Operasional)</span>
           </button>
-        )}
+
+          {cart.length > 0 && (
+            <button
+              type="button"
+              onClick={clearCart}
+              className="inline-flex items-center gap-1.5 px-3 py-2 sm:py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors shadow-2xs cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Mobile Tab Switcher (Katalog vs Keranjang) */}
@@ -967,6 +1031,145 @@ export default function Kasir() {
         type="pos"
         storeInfo={storeInfo}
       />
+
+      {/* Modal Cepat: Catat Pengeluaran Laci (Operasional Toko) */}
+      <Modal
+        isOpen={isExpenseModalOpen}
+        onClose={() => !expenseSubmitting && setIsExpenseModalOpen(false)}
+        title="Catat Pengeluaran Laci (Operasional)"
+        subtitle="Uang kas fisik di laci kasir otomatis terpotong saat disimpan."
+        maxWidth="max-w-lg"
+      >
+        <form onSubmit={handleExpenseSubmit} className="space-y-4">
+          {/* Pilihan Cepat Kategori */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Kategori Pengeluaran <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {[
+                'Gas Elpiji',
+                'Oksigen',
+                'Konsumsi & Makan',
+                'Listrik, Token & Air',
+                'Bensin & Angkutan',
+                'Operasional Toko',
+                'Pengeluaran Lain-lain',
+              ].map((cat) => (
+                <button
+                  type="button"
+                  key={cat}
+                  onClick={() => setExpenseForm((prev) => ({ ...prev, kategori: cat }))}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                    expenseForm.kategori === cat
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <select
+              value={expenseForm.kategori}
+              onChange={(e) => setExpenseForm((prev) => ({ ...prev, kategori: e.target.value }))}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:border-rose-500 focus:bg-white"
+            >
+              <option value="Gas Elpiji">Gas Elpiji</option>
+              <option value="Oksigen">Oksigen</option>
+              <option value="Konsumsi & Makan">Konsumsi & Makan</option>
+              <option value="Listrik, Token & Air">Listrik, Token & Air</option>
+              <option value="Bensin & Angkutan">Bensin & Angkutan</option>
+              <option value="Operasional Toko">Operasional Toko</option>
+              <option value="Beli Perlengkapan & ATK">Beli Perlengkapan & ATK</option>
+              <option value="Perbaikan & Servis">Perbaikan & Servis</option>
+              <option value="Pengeluaran Lain-lain">Pengeluaran Lain-lain</option>
+            </select>
+          </div>
+
+          {/* Input Jumlah Nominal */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Nominal Pengeluaran (Rp) <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-2.5 text-xs font-bold text-slate-400">Rp</span>
+              <input
+                type="number"
+                min="1"
+                step="any"
+                required
+                placeholder="Contoh: 25000"
+                value={expenseForm.jumlah}
+                onChange={(e) => setExpenseForm((prev) => ({ ...prev, jumlah: e.target.value }))}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-black font-mono-num text-slate-900 focus:outline-none focus:border-rose-500 focus:bg-white"
+              />
+            </div>
+            {expenseForm.jumlah && !isNaN(parseFloat(expenseForm.jumlah)) && (
+              <p className="text-[11px] font-bold text-rose-600 mt-1">
+                Terpotong: {formatRupiah(parseFloat(expenseForm.jumlah) || 0)}
+              </p>
+            )}
+          </div>
+
+          {/* Keterangan / Catatan */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Keterangan / Rincian
+            </label>
+            <input
+              type="text"
+              placeholder="Contoh: Beli tabung gas 3kg, nasi bungkus kasir, token listrik toko..."
+              value={expenseForm.keterangan}
+              onChange={(e) => setExpenseForm((prev) => ({ ...prev, keterangan: e.target.value }))}
+              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm text-slate-800 focus:outline-none focus:border-rose-500 focus:bg-white"
+            />
+          </div>
+
+          {/* Tanggal */}
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+              Tanggal Transaksi
+            </label>
+            <input
+              type="date"
+              value={expenseForm.tanggal}
+              onChange={(e) => setExpenseForm((prev) => ({ ...prev, tanggal: e.target.value }))}
+              className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-medium text-slate-800 focus:outline-none focus:border-rose-500 focus:bg-white"
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              disabled={expenseSubmitting}
+              onClick={() => setIsExpenseModalOpen(false)}
+              className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={expenseSubmitting}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {expenseSubmitting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                <>
+                  <Minus className="w-3.5 h-3.5" />
+                  <span>Simpan & Potong Uang Laci</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

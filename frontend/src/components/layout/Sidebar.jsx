@@ -25,7 +25,7 @@ const NAV_ITEMS = [
   { to: '/pelanggan', label: 'Pelanggan & Petani', icon: Users },
   { to: '/hutang', label: 'Buku Hutang', icon: CreditCard },
   { to: '/titipan', label: 'Tabungan Titipan', icon: Wallet },
-  { to: '/kas', label: 'Uang Kas Toko', icon: Banknote, role: 'admin' },
+  { to: '/kas', label: 'Kas & Operasional', icon: Banknote },
   { to: '/laporan', label: 'Laporan & Rekap', icon: BarChart3, role: 'admin' },
   { to: '/pegawai', label: 'Manajemen Pegawai', icon: UserCheck, role: 'admin' },
   { to: '/pengaturan', label: 'Pengaturan', icon: Settings, role: 'admin' },

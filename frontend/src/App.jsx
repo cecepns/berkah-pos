@@ -71,7 +71,7 @@ export default function App() {
             <Route
               path="kas"
               element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute>
                   <Kas />
                 </ProtectedRoute>
               }

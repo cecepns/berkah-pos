@@ -280,7 +280,7 @@ CREATE TABLE `kas` (
   `tipe` ENUM('masuk', 'keluar') NOT NULL,
   `kategori` VARCHAR(60) NOT NULL,
   `jumlah` DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
-  `sumber` ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan') DEFAULT 'manual',
+  `sumber` ENUM('manual', 'kasir', 'komoditas', 'bayar_hutang', 'titipan', 'hutang') DEFAULT 'manual',
   `referensi_id` VARCHAR(50) DEFAULT NULL,
   `keterangan` TEXT DEFAULT NULL,
   `tanggal` DATE NOT NULL,

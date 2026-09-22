@@ -68,6 +68,7 @@ export const API_ENDPOINTS = {
     CREATE: '/kas',
     UPDATE: (id) => `/kas/${id}`,
     DELETE: (id) => `/kas/${id}`,
+    PERBAIKI_SINKRONISASI: '/kas/perbaiki-sinkronisasi',
   },
 
   LAPORAN: {

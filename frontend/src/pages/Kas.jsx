@@ -13,6 +13,7 @@ import {
   Filter,
   Sparkles,
   TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
@@ -34,14 +35,17 @@ const KATEGORI_MASUK = [
 ];
 
 const KATEGORI_KELUAR = [
+  'Gas Elpiji',
+  'Oksigen',
+  'Konsumsi & Makan',
+  'Listrik, Token & Air',
   'Operasional Toko',
   'Bensin & Angkutan',
-  'Listrik, Air & Internet',
-  'Gaji & Upah Karyawan',
-  'Konsumsi & Makan',
-  'Beli Perlengkapan',
+  'Beli Perlengkapan & ATK',
   'Perbaikan & Servis',
+  'Gaji & Upah Karyawan',
   'Prive / Tarik Kas Pemilik',
+  'Kasbon Tunai',
   'Pengeluaran Lain-lain',
 ];
 
@@ -236,6 +240,24 @@ export default function Kas() {
     }
   };
 
+  // Sync State
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  const handleSync = async () => {
+    setSyncLoading(true);
+    try {
+      const res = await request.post(API_ENDPOINTS.KAS.PERBAIKI_SINKRONISASI);
+      if (res?.success) {
+        toast.success(res.message || 'Sinkronisasi kas, kasbon & tabungan berhasil!');
+        fetchKas(1, pagination.limit, search, tipeFilter, startDate, endDate);
+      }
+    } catch {
+      toast.error('Gagal menyinkronkan buku kas');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Header Page */}
@@ -243,24 +265,38 @@ export default function Kas() {
         <div>
           <h2 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <Banknote className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 shrink-0" />
-            <span>Buku Uang Kas Toko</span>
+            <span>Buku Kas & Pengeluaran Operasional</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
-            Pencatatan kas masuk (modal/setoran), kas keluar operasional, dan rekonsiliasi saldo kas riil toko.
+            Pencatatan kas masuk modal/omzet, pengeluaran operasional (konsumsi, gas, oksigen, listrik), kasbon, serta rekonsiliasi uang fisik di laci.
           </p>
         </div>
 
-        {/* Action Buttons: Kas Masuk & Kas Keluar */}
-        <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
+          {/* Tombol Sinkronisasi Kas & Kasbon */}
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncLoading}
+            title="Sinkronkan saldo laci dengan mutasi kasbon tunai & tabungan"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition-all border border-slate-200 shadow-2xs cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${syncLoading ? 'animate-spin text-emerald-600' : 'text-slate-600'}`} />
+            <span className="hidden xs:inline">Sinkronkan</span>
+          </button>
+
+          {/* Tombol Kas Keluar / Operasional */}
           <button
             type="button"
             onClick={() => openCreateModal('keluar')}
             className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs sm:text-sm transition-all shadow-2xs cursor-pointer"
           >
             <Minus className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-600 shrink-0" />
-            <span>Kas Keluar</span>
+            <span>Kas Keluar / Operasional</span>
           </button>
 
+          {/* Tombol Kas Masuk */}
           <button
             type="button"
             onClick={() => openCreateModal('masuk')}
@@ -278,7 +314,7 @@ export default function Kas() {
         <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Saldo di Laci
+              Saldo Fisik di Laci
             </span>
             <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
               <Wallet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -291,26 +327,30 @@ export default function Kas() {
           >
             {formatRupiah(summary.saldo_kas)}
           </div>
-          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
-            Total Kas Masuk - Keluar
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block truncate">
+            Uang fisik kasir saat ini
           </div>
         </div>
 
-        {/* Card 2: Total Kas Masuk */}
+        {/* Card 2: Omzet Penjualan & Modal Masuk */}
         <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Total Masuk
+              Omzet Penjualan & Modal
             </span>
             <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
               <ArrowDownRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
           <div className="text-lg sm:text-2xl font-black text-emerald-600 font-mono-num mb-0.5">
-            {formatRupiah(summary.total_masuk)}
+            {formatRupiah(summary.omzet_masuk || summary.total_masuk)}
           </div>
-          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
-            Modal & pemasukan
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block truncate">
+            {summary.pelunasan_kasbon_masuk > 0 ? (
+              <span>+ Pelunasan kasbon: {formatRupiah(summary.pelunasan_kasbon_masuk)} (non-omzet)</span>
+            ) : (
+              <span>Penjualan kasir & modal toko</span>
+            )}
           </div>
         </div>
 
@@ -318,7 +358,7 @@ export default function Kas() {
         <div className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-sm">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] sm:text-xs text-slate-400 uppercase font-bold tracking-wider">
-              Total Keluar
+              Total Kas Keluar
             </span>
             <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
               <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -327,8 +367,8 @@ export default function Kas() {
           <div className="text-lg sm:text-2xl font-black text-rose-600 font-mono-num mb-0.5">
             {formatRupiah(summary.total_keluar)}
           </div>
-          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
-            Operasional & belanja
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block truncate">
+            Operasional, komoditas & kasbon
           </div>
         </div>
 
@@ -349,9 +389,17 @@ export default function Kas() {
           >
             {formatRupiah(summary.kas_hari_ini?.selisih || 0)}
           </div>
-          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block">
-            Net hari ini
+          <div className="text-[10px] sm:text-[11px] text-slate-400 hidden sm:block truncate">
+            Masuk {formatRupiah(summary.kas_hari_ini?.masuk || 0)} | Keluar {formatRupiah(summary.kas_hari_ini?.keluar || 0)}
           </div>
+        </div>
+      </div>
+
+      {/* Info Banner Alur Kasbon & Laci */}
+      <div className="flex items-start sm:items-center gap-2.5 px-3.5 py-2.5 rounded-xl sm:rounded-2xl bg-emerald-50/80 border border-emerald-200/90 text-emerald-900 text-xs">
+        <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+        <div className="leading-relaxed">
+          <span className="font-bold">Sinkronisasi Kasbon & Kas di Laci:</span> Kasbon tunai memotong kas laci kasir secara otomatis. Saat pelanggan melunasi kasbon tunai, uang kas di laci bertambah kembali namun <strong>tidak dihitung sebagai omzet penjualan baru</strong> agar pembukuan tetap seimbang.
         </div>
       </div>
 

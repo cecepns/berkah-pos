@@ -6,6 +6,8 @@ import {
   Edit2,
   Trash2,
   Image as ImageIcon,
+  RefreshCw,
+  Lock,
 } from 'lucide-react';
 import { request } from '@/utils/request';
 import { API_ENDPOINTS } from '@/utils/endpoints';
@@ -164,8 +166,33 @@ export default function Produk() {
     }
   };
 
+  // State & Handler Pemulihan Produk Komoditas Sistem
+  const [restoreLoading, setRestoreLoading] = useState(false);
+
+  const handleRestoreCommodities = async () => {
+    setRestoreLoading(true);
+    try {
+      const res = await request.post(API_ENDPOINTS.PRODUK.PULIHKAN_KOMODITAS);
+      if (res?.success) {
+        toast.success(res.message || 'Produk komoditas berhasil dipulihkan!');
+        fetchProducts(pagination.page, pagination.limit, search, kategori);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Gagal memulihkan produk komoditas');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!deleteId) return;
+    const target = list.find((p) => p.id === deleteId);
+    if (target?.kode?.startsWith('KMD-')) {
+      toast.error('Produk komoditas sistem tidak dapat dihapus!');
+      setDeleteId(null);
+      return;
+    }
+
     setDeleteLoading(true);
     try {
       const res = await request.delete(API_ENDPOINTS.PRODUK.DELETE(deleteId));
@@ -195,14 +222,28 @@ export default function Produk() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Produk Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {/* Tombol Pulihkan Komoditas Sistem */}
+          <button
+            type="button"
+            onClick={handleRestoreCommodities}
+            disabled={restoreLoading}
+            title="Pulihkan dan sinkronkan 3 produk komoditas otomatis (Emas, Sawit, Karet) jika terhapus"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-xs sm:text-sm shadow-2xs transition-all cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`w-4 h-4 text-amber-600 ${restoreLoading ? 'animate-spin' : ''}`} />
+            <span>Pulihkan Komoditas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openCreateModal}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Produk Baru</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search */}
@@ -354,14 +395,23 @@ export default function Produk() {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleteId(item.id)}
-                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors"
-                            title="Hapus Produk"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {item.kode?.startsWith('KMD-') ? (
+                            <span
+                              className="p-1.5 rounded-lg bg-slate-100 text-slate-400 cursor-not-allowed inline-flex items-center justify-center"
+                              title="Produk komoditas sistem terproteksi (tidak dapat dihapus)"
+                            >
+                              <Lock className="w-4 h-4" />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteId(item.id)}
+                              className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 transition-colors cursor-pointer"
+                              title="Hapus Produk"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

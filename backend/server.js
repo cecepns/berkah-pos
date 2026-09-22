@@ -942,10 +942,39 @@ app.put('/api/produk/:id', upload.single('foto'), async (req, res) => {
 app.delete('/api/produk/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
+    const [exist] = await db.query('SELECT kode, nama FROM produk WHERE id = ?', [id]);
+    if (exist.length === 0) {
+      return res.status(404).json({ success: false, message: 'Produk tidak ditemukan!' });
+    }
+
+    // Proteksi: Produk auto-komoditas (Emas, Sawit, Karet) tidak boleh dihapus
+    if (exist[0].kode?.startsWith('KMD-')) {
+      return res.status(400).json({
+        success: false,
+        message: `Produk komoditas sistem (${exist[0].nama}) tidak dapat dihapus karena terhubung dengan transaksi timbang komoditas!`,
+      });
+    }
+
     await db.query('DELETE FROM produk WHERE id = ?', [id]);
     return res.json({ success: true, message: 'Produk berhasil dihapus' });
   } catch (error) {
     console.error('DELETE /api/produk/:id error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/produk/pulihkan-komoditas - Pulihkan produk komoditas jika terhapus
+app.post('/api/produk/pulihkan-komoditas', async (req, res) => {
+  try {
+    await ensureCommodityProducts();
+    const [rows] = await db.query("SELECT * FROM produk WHERE kode IN ('KMD-EMAS', 'KMD-SAWIT', 'KMD-KARET')");
+    return res.json({
+      success: true,
+      message: 'Produk komoditas sistem (Emas, Sawit, Karet) berhasil dipulihkan & stok disinkronkan!',
+      data: rows,
+    });
+  } catch (error) {
+    console.error('POST /api/produk/pulihkan-komoditas error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 });

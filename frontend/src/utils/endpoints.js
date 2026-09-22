@@ -32,6 +32,7 @@ export const API_ENDPOINTS = {
     CREATE: '/produk',
     UPDATE: (id) => `/produk/${id}`,
     DELETE: (id) => `/produk/${id}`,
+    PULIHKAN_KOMODITAS: '/produk/pulihkan-komoditas',
   },
 
   TRANSAKSI_BELI: {
